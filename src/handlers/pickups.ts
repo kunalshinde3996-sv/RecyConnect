@@ -5,7 +5,7 @@ import { requireRole } from '../middleware/requireRole';
 import { validate } from '../middleware/validate';
 import * as pickupService from '../services/pickupService';
 import { getTimeline } from '../services/timelineService';
-import { CATEGORIES, type Pickup } from '../types';
+import { CATEGORIES, type AuthUser, type Pickup } from '../types';
 import { ok } from '../utils/response';
 
 const createSchema = z.object({
@@ -21,36 +21,36 @@ const collectSchema = z.object({
 
 const idParams = z.object({ id: z.uuid() });
 
-/**
- * qrToken is the resident's proof-of-presence secret (shown as a QR code on their phone).
- * Collectors must scan it, so it is never included in collector-facing responses.
- */
-const withoutQr = ({ qrToken: _qr, ...rest }: Pickup) => rest;
+// Every pickup in a response goes through toPickupView, which hides qrToken from anyone but the
+// owning resident and admins (see pickupService.canSeeQrToken).
+const view = (viewer: AuthUser) => (p: Pickup) => pickupService.toPickupView(p, viewer);
 
 export const pickupsRouter = Router();
 pickupsRouter.use(auth);
 
 pickupsRouter.post('/', requireRole('resident'), validate(createSchema), async (req, res) => {
-  ok(res, await pickupService.createPickup(req.user!.userId, req.body), 201);
+  const pickup = await pickupService.createPickup(req.user!.userId, req.body);
+  ok(res, view(req.user!)(pickup), 201);
 });
 
 pickupsRouter.get('/mine', requireRole('resident'), async (req, res) => {
-  ok(res, await pickupService.listByResident(req.user!.userId));
+  const pickups = await pickupService.listByResident(req.user!.userId);
+  ok(res, pickups.map(view(req.user!)));
 });
 
-pickupsRouter.get('/available', requireRole('collector'), async (_req, res) => {
+pickupsRouter.get('/available', requireRole('collector'), async (req, res) => {
   const pickups = await pickupService.listByStatus('pending');
-  ok(res, pickups.map(withoutQr));
+  ok(res, pickups.map(view(req.user!)));
 });
 
 pickupsRouter.get('/assigned', requireRole('collector'), async (req, res) => {
   const pickups = await pickupService.listByCollector(req.user!.userId);
-  ok(res, pickups.map(withoutQr));
+  ok(res, pickups.map(view(req.user!)));
 });
 
 pickupsRouter.patch('/:id/assign', requireRole('collector'), validate(idParams, 'params'), async (req, res) => {
   const pickup = await pickupService.assignPickup(req.params.id as string, req.user!.userId);
-  ok(res, withoutQr(pickup));
+  ok(res, view(req.user!)(pickup));
 });
 
 pickupsRouter.patch(
@@ -60,7 +60,7 @@ pickupsRouter.patch(
   validate(collectSchema),
   async (req, res) => {
     const pickup = await pickupService.collectPickup(req.params.id as string, req.user!.userId, req.body);
-    ok(res, withoutQr(pickup));
+    ok(res, view(req.user!)(pickup));
   },
 );
 

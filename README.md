@@ -213,7 +213,7 @@ npm run dev      # API on http://localhost:5000 (tsx watch)
 npm run worker   # in a second terminal: long-polls SQS and classifies photos
 ```
 
-Other scripts: `npm run build` (tsc → `dist/`), `npm start` (run built server), `npm run typecheck`.
+Other scripts: `npm run build` (tsc → `dist/`), `npm start` (run built server), `npm run typecheck`, `npm run test:unit` (fast unit tests, no AWS or server needed).
 
 ### End-to-end test
 
@@ -226,7 +226,7 @@ Other scripts: `npm run build` (tsc → `dist/`), `npm start` (run built server)
 - **Custody chain:** collect with qrToken, handoff, admin confirm, then the timeline
 - **Admin:** checks stats, filtered list and collector counts
 
-Along the way it also checks the expected 400/403/404/409 rejections. It reads `.env`, so it works against LocalStack or real AWS (`E2E_API_URL` overrides the API address). Each run adds one resident and one completed pickup, so it can be repeated without resetting data. It exits non-zero if any check fails.
+Along the way it also checks the expected 400/403/404/409 rejections. It finishes with a **qrToken leak sweep**: it records every response a collector received during the run and fails if any contains the resident's token or a `qrToken` field. It reads `.env`, so it works against LocalStack or real AWS (`E2E_API_URL` overrides the API address). Each run adds one resident and one completed pickup, so it can be repeated without resetting data. It exits non-zero if any check fails.
 
 All seed accounts use password **`password123`**:
 
@@ -265,6 +265,8 @@ pending ──assign──▶ assigned ──collect (QR + kg)──▶ collecte
 ## API
 
 All responses are `{ "success": true, "data": ... }` or `{ "success": false, "message": "..." }`. Authenticated routes need `Authorization: Bearer <token>`.
+
+**`qrToken` visibility:** the QR token is the resident's proof that the collector was physically there, so it's returned **only to the owning resident and admins**. It is never returned to a collector by any endpoint. Every response containing a pickup goes through `toPickupView()` in `src/services/pickupService.ts`; new endpoints must use it too. `npm run test:unit` pins the rule, and `npm run test:e2e` sweeps all collector responses for leaks.
 
 | Method & path | Role | Notes |
 |---|---|---|

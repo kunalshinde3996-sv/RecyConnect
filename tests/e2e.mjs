@@ -18,13 +18,19 @@ function check(name, cond, detail = '') {
   return cond;
 }
 
+/** Every API response body, with the token that requested it, for the qrToken leak sweep. */
+const responseLog = [];
+
 async function api(method, path, { body, token } = {}) {
   const r = await fetch(API + path, {
     method,
     headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const json = await r.json().catch(() => null);
+  const text = await r.text();
+  responseLog.push({ token, method, path, status: r.status, text });
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* non-JSON response */ }
   return { status: r.status, json };
 }
 
@@ -111,6 +117,18 @@ async function main() {
   check('confirm with foreign key -> 400', r.status === 400, `${r.status}`);
   r = await api('POST', '/api/uploads/confirm', { token: resident, body: { pickupId: pickup.pickupId, key } });
   check('confirm -> 202 mlStatus queued', r.status === 202 && r.json.data.mlStatus === 'queued' && r.json.data.photoKey === key, JSON.stringify(r.json));
+  check('resident confirm response includes their own qrToken', r.json?.data?.qrToken === pickup.qrToken);
+
+  // The assigned collector re-takes the photo (the normal app flow). This path used to leak
+  // qrToken. If the worker hasn't processed the resident's photo yet, that message becomes stale and is skipped.
+  r = await api('POST', '/api/uploads/presign', { token: collector, body: { pickupId: pickup.pickupId, contentType: 'image/png' } });
+  check('collector presign -> 200', r.status === 200 && r.json?.data?.uploadUrl, JSON.stringify(r.json));
+  const cPut = await fetch(r.json.data.uploadUrl, { method: 'PUT', headers: r.json.data.headers, body: PNG });
+  check('collector PUT to S3 -> 200', cPut.status === 200, String(cPut.status));
+  const collectorKey = r.json.data.key;
+  r = await api('POST', '/api/uploads/confirm', { token: collector, body: { pickupId: pickup.pickupId, key: collectorKey } });
+  check('collector confirm -> 202 with new photoKey', r.status === 202 && r.json.data.photoKey === collectorKey, JSON.stringify(r.json));
+  check('collector confirm response has NO qrToken', r.json?.data && !('qrToken' in r.json.data), JSON.stringify(r.json?.data));
 
   // --- Worker ---
   let ml;
@@ -171,6 +189,24 @@ async function main() {
   check('admin collectors has counts', ravi && typeof ravi.completedCount === 'number' && ravi.completedCount >= 2, JSON.stringify(ravi));
   r = await api('GET', '/api/admin/stats', { token: resident });
   check('resident on admin stats -> 403', r.status === 403);
+  r = await api('GET', '/api/admin/pickups', { token: admin });
+  check('admin pickups include qrToken (admins may see it)', r.json.data.find((p) => p.pickupId === pickup.pickupId)?.qrToken === pickup.qrToken);
+
+  // --- qrToken leak sweep ---
+  // Hit every collector-readable endpoint once more, then scan EVERY response a collector
+  // received during this whole run for the secret's value or a qrToken field.
+  await api('GET', '/api/pickups/available', { token: collector });
+  await api('GET', '/api/pickups/assigned', { token: collector });
+  await api('GET', '/api/pickups/assigned', { token: collector2 });
+  await api('GET', `/api/pickups/${pickup.pickupId}/timeline`, { token: collector });
+  await api('GET', '/api/auth/me', { token: collector });
+  const collectorResponses = responseLog.filter((e) => e.token === collector || e.token === collector2);
+  const leaks = collectorResponses.filter((e) => e.text.includes(pickup.qrToken) || /"qrToken"\s*:/.test(e.text));
+  check(
+    `no collector response leaks qrToken (${collectorResponses.length} responses scanned)`,
+    collectorResponses.length >= 15 && leaks.length === 0,
+    leaks.map((e) => `${e.method} ${e.path} -> ${e.status}`).join(', ') || `only ${collectorResponses.length} responses scanned`,
+  );
 
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

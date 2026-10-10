@@ -18,7 +18,8 @@
     "local:up": "docker compose up -d",
     "local:down": "docker compose down",
     "local:bootstrap": "tsx src/scripts/bootstrapLocal.ts",
-    "test:e2e": "node tests/e2e.mjs"
+    "test:e2e": "node tests/e2e.mjs",
+    "test:unit": "tsx --test tests/unit/*.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1149.0",

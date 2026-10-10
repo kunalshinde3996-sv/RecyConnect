@@ -30,6 +30,25 @@ export function serializePickup(p: Pickup): Pickup {
   return { ...p, collectorId: p.collectorId ?? null };
 }
 
+/** A pickup as returned to a specific viewer; qrToken is only present when they may see it. */
+export type PickupView = Omit<Pickup, 'qrToken'> & { qrToken?: string };
+
+/**
+ * qrToken is the resident's proof-of-presence secret: the collector must scan it from the
+ * resident's phone to mark a pickup collected. So it may only be shown to the resident who owns
+ * the pickup and to admins. Every API response containing a pickup MUST go through this.
+ */
+export function canSeeQrToken(viewer: AuthUser, pickup: Pick<Pickup, 'residentId'>): boolean {
+  return viewer.role === 'admin' || (viewer.role === 'resident' && viewer.userId === pickup.residentId);
+}
+
+export function toPickupView(pickup: Pickup, viewer: AuthUser): PickupView {
+  const view = serializePickup(pickup);
+  if (canSeeQrToken(viewer, pickup)) return view;
+  const { qrToken: _secret, ...rest } = view;
+  return rest;
+}
+
 /**
  * Builds an UpdateCommand input that moves a pickup `from -> to`, appends to statusHistory,
  * and applies any extra SET fields. The ConditionExpression re-checks the current status

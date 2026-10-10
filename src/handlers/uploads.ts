@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { auth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
 import { ALLOWED_CONTENT_TYPES, confirmUpload, presignUpload } from '../services/uploadService';
+import { toPickupView } from '../services/pickupService';
 import { ok } from '../utils/response';
 
 const presignSchema = z.object({
@@ -24,5 +25,6 @@ uploadsRouter.post('/presign', validate(presignSchema), async (req, res) => {
 });
 
 uploadsRouter.post('/confirm', validate(confirmSchema), async (req, res) => {
-  ok(res, await confirmUpload(req.user!, req.body.pickupId, req.body.key), 202);
+  const pickup = await confirmUpload(req.user!, req.body.pickupId, req.body.key);
+  ok(res, toPickupView(pickup, req.user!), 202);
 });
