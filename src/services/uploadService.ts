@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SendMessageCommand } from '@aws-sdk/client-sqs';
 import { s3, s3Presigner, sqs } from '../config/aws';
@@ -38,6 +38,15 @@ export async function presignUpload(user: AuthUser, pickupId: string, contentTyp
     headers: { 'Content-Type': contentType },
     expiresIn: PRESIGN_TTL_SECONDS,
   };
+}
+
+const VIEW_TTL_SECONDS = 15 * 60;
+
+/** Short-lived GET URL so the browser can display a private photo (the bucket stays private). */
+export async function presignView(key: string): Promise<string> {
+  return getSignedUrl(s3Presigner, new GetObjectCommand({ Bucket: env.s3Bucket, Key: key }), {
+    expiresIn: VIEW_TTL_SECONDS,
+  });
 }
 
 /** Step 2: client confirms the upload; we record it and enqueue async classification. */

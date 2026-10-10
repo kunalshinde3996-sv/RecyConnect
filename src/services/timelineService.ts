@@ -1,12 +1,19 @@
 import type { AuthUser } from '../types';
 import { listByPickup } from './handoffService';
 import { requireAccessiblePickup } from './pickupService';
+import { presignView } from './uploadService';
 import { getUserById } from './userService';
 
-/** Full chain of custody for one pickup: status history (with actor names) + handoffs + ML result. */
+/**
+ * Full chain of custody for one pickup: status history (with actor names), handoffs, ML result,
+ * and a short-lived photoUrl (presigned GET) so clients can display the private S3 photo.
+ */
 export async function getTimeline(user: AuthUser, pickupId: string) {
   const pickup = await requireAccessiblePickup(user, pickupId);
-  const handoffs = await listByPickup(pickupId);
+  const [handoffs, photoUrl] = await Promise.all([
+    listByPickup(pickupId),
+    pickup.photoKey ? presignView(pickup.photoKey) : Promise.resolve(null),
+  ]);
 
   const actorIds = [...new Set(pickup.statusHistory.map((h) => h.by))];
   const actors = new Map(
@@ -25,6 +32,7 @@ export async function getTimeline(user: AuthUser, pickupId: string) {
     collectorId: pickup.collectorId ?? null,
     declaredCategory: pickup.declaredCategory,
     weightKg: pickup.weightKg ?? null,
+    photoUrl,
     ml: {
       status: pickup.mlStatus,
       category: pickup.mlCategory ?? null,

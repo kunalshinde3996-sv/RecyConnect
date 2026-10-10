@@ -32,6 +32,35 @@ Backend for a recyclable-waste traceability platform. Residents request pickups,
 | `src/scripts/createTables.ts` | Infrastructure: creates the 3 **DynamoDB** tables + GSIs |
 | `src/scripts/seed.ts` | Demo data |
 | `src/scripts/bootstrapLocal.ts` + `docker-compose.yml` | LocalStack emulation of S3, SQS and DynamoDB for offline dev |
+| `web/` | Client (React SPA): talks to API Gateway for data and to S3 directly for photo uploads |
+
+## Run everything together (backend + worker + web)
+
+Quickest path, fully local with LocalStack (needs Docker):
+
+```bash
+# one-time setup
+npm install && (cd web && npm install)
+npm run local:up
+cp .env.local.example .env
+npm run local:bootstrap
+npm run seed
+
+# then, in three terminals:
+npm run dev                  # 1. API         → http://localhost:5000
+npm run worker               # 2. ML worker   (polls SQS, writes results to DynamoDB)
+cd web && npm run dev        # 3. Web app     → http://localhost:5173
+```
+
+Open http://localhost:5173. The login page lists the demo accounts; click one to fill it in. A good demo uses three browser windows (or one normal and two private), one per role:
+
+1. **Resident** (`arjun.resident@…`): request a pickup. The detail page shows its QR code and the code as text.
+2. **Collector** (`ravi.collector@…`; use phone size or DevTools device mode): claim it under **Available**, upload a photo and watch *Analysing…* turn into the AI result, then scan the resident's QR (or paste the code) and enter the weight. Finish with a hand-off to a facility.
+3. **Admin** (`admin@…`): stats update live every 5 s. Filter by *Handed off*, click **Confirm recycler receipt**, then click the row to see the complete chain of custody.
+
+The web app reads `VITE_API_URL` (default `http://localhost:5000`; see `web/.env.example`). Port 5173 is fixed (`strictPort`) because the S3 CORS rule and the API's `CORS_ORIGIN` allow exactly that origin. Camera QR scanning needs a secure origin: `localhost` counts, a LAN IP over plain HTTP doesn't, so manual code entry is always available as a fallback. `cd web && npm run build` produces a static bundle in `web/dist`, suitable for S3 + CloudFront.
+
+To use real AWS instead of LocalStack, follow sections 1–3 below and run the same three processes.
 
 ## Prerequisites
 
@@ -248,7 +277,7 @@ All responses are `{ "success": true, "data": ... }` or `{ "success": false, "me
 | `GET /api/pickups/assigned` | collector | pickups this collector claimed (`qrToken` stripped) |
 | `PATCH /api/pickups/:id/assign` | collector | pending → assigned |
 | `PATCH /api/pickups/:id/collect` | collector (assignee) | `{ qrToken, weightKg }`; wrong token → 400; assigned → collected |
-| `GET /api/pickups/:id/timeline` | owner resident, assigned collector, admin | status history with actor names, handoffs, ML result |
+| `GET /api/pickups/:id/timeline` | owner resident, assigned collector, admin | status history with actor names, handoffs, ML result, and `photoUrl` (presigned GET, valid 15 min, `null` if no photo) |
 | `POST /api/uploads/presign` | anyone with access to the pickup | `{ pickupId, contentType: image/jpeg\|image/png }` → `{ uploadUrl, key, headers, expiresIn }` |
 | `POST /api/uploads/confirm` | anyone with access to the pickup | `{ pickupId, key }`; verifies the object exists, sets `photoKey`, `mlStatus='queued'`, enqueues `{ pickupId, key }` → 202 |
 | `POST /api/handoffs` | collector (assignee) | `{ pickupId, facilityName, handoffPhotoKey? }`; collected → handed_off |
