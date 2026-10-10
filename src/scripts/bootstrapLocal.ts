@@ -5,17 +5,19 @@ import {
   GetQueueUrlCommand,
   QueueDoesNotExist,
 } from '@aws-sdk/client-sqs';
-import { isLocalStack, s3, sqs } from '../config/aws';
+import { CreateTopicCommand } from '@aws-sdk/client-sns';
+import { isLocalStack, s3, sns, sqs } from '../config/aws';
 import { env } from '../config/env';
 import { createTables } from './createTables';
 
 /**
  * One-shot setup of everything the app needs inside LocalStack: S3 bucket (+CORS),
- * SQS queue with DLQ, and the DynamoDB tables. Safe to run repeatedly.
+ * SQS queue with DLQ, SNS alerts topic, and the DynamoDB tables. Safe to run repeatedly.
  */
 
-const QUEUE_NAME = 'recy-classify-queue';
-const DLQ_NAME = 'recy-classify-dlq';
+export const QUEUE_NAME = 'recy-classify-queue';
+export const DLQ_NAME = 'recy-classify-dlq';
+export const TOPIC_NAME = 'recy-alerts';
 const FRONTEND_ORIGIN = 'http://localhost:5173';
 
 async function ensureBucket(bucket: string) {
@@ -57,7 +59,7 @@ async function ensureBucket(bucket: string) {
   console.log(`S3 CORS set (PUT/GET from ${FRONTEND_ORIGIN})`);
 }
 
-async function existingQueueUrl(name: string): Promise<string | undefined> {
+export async function existingQueueUrl(name: string): Promise<string | undefined> {
   try {
     const out = await sqs.send(new GetQueueUrlCommand({ QueueName: name }));
     return out.QueueUrl;
@@ -80,12 +82,25 @@ async function ensureQueue(name: string, attributes: Record<string, string>): Pr
   return out.QueueUrl!;
 }
 
-async function main() {
+/** Refuses to run unless AWS_ENDPOINT is set, so local scripts can never touch real AWS. */
+export function assertLocalStack(script: string): void {
   if (!isLocalStack) {
-    console.error('AWS_ENDPOINT is not set. bootstrapLocal only runs against LocalStack, never real AWS.');
+    console.error(`AWS_ENDPOINT is not set. ${script} only runs against LocalStack, never real AWS.`);
     process.exit(1);
   }
-  console.log(`Bootstrapping LocalStack at ${env.awsEndpoint} (region ${env.region})\n`);
+}
+
+/** CreateTopic is idempotent: it returns the existing ARN if the topic is already there. */
+async function ensureTopic(name: string): Promise<string> {
+  const out = await sns.send(new CreateTopicCommand({ Name: name }));
+  console.log(`SNS topic ${name} ready`);
+  return out.TopicArn!;
+}
+
+export async function bootstrap(): Promise<{ queueUrl: string; topicArn: string }> {
+  assertLocalStack('bootstrapLocal');
+  console.log(`Bootstrapping LocalStack at ${env.awsEndpoint} (region ${env.region})
+`);
 
   await ensureBucket(env.s3Bucket);
 
@@ -98,17 +113,29 @@ async function main() {
     ReceiveMessageWaitTimeSeconds: '20',
     RedrivePolicy: JSON.stringify({ deadLetterTargetArn: dlqAttrs.Attributes!.QueueArn, maxReceiveCount: 5 }),
   });
+  const topicArn = await ensureTopic(TOPIC_NAME);
 
   console.log('');
   await createTables();
 
-  console.log(`\nLocalStack is ready. Put this in your .env:\n\n  SQS_QUEUE_URL=${queueUrl}\n`);
+  console.log(`
+LocalStack is ready. Your .env should contain:
+
+  SQS_QUEUE_URL=${queueUrl}
+  SNS_TOPIC_ARN=${topicArn}
+`);
   if (process.env.SQS_QUEUE_URL && process.env.SQS_QUEUE_URL !== queueUrl) {
     console.warn(`Note: your current SQS_QUEUE_URL (${process.env.SQS_QUEUE_URL}) differs from the above.`);
   }
+  if (process.env.SNS_TOPIC_ARN !== topicArn) {
+    console.warn(`Note: your current SNS_TOPIC_ARN (${process.env.SNS_TOPIC_ARN ?? 'unset'}) differs from the above; alerts won't be published to SNS.`);
+  }
+  return { queueUrl, topicArn };
 }
 
-main().catch((err) => {
-  console.error('bootstrapLocal failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  bootstrap().catch((err) => {
+    console.error('bootstrapLocal failed:', err);
+    process.exit(1);
+  });
+}

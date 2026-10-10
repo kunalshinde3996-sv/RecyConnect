@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react';
 import { Spinner } from './States';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
@@ -56,8 +56,12 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={`${inputClass} ${props.className ?? ''}`} />;
 }
 
-export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <section className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${className}`}>{children}</section>;
+export function Card({ children, className = '', ...rest }: HTMLAttributes<HTMLElement> & { children: ReactNode }) {
+  return (
+    <section {...rest} className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 ${className}`}>
+      {children}
+    </section>
+  );
 }
 
 export function PageTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {

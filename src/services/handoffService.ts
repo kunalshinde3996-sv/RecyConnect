@@ -4,7 +4,8 @@ import { ddb, tables } from '../config/aws';
 import { AppError } from '../utils/AppError';
 import type { Handoff } from '../types';
 import { isConditionalCheckFailed, nowIso, queryAll } from './db';
-import { assertTransition, buildTransitionUpdate, requirePickup } from './pickupService';
+import { raiseAlert } from './alertService';
+import { assertTransition, buildTransitionUpdate, logTransition, requirePickup } from './pickupService';
 
 export async function getHandoff(handoffId: string): Promise<Handoff | undefined> {
   const out = await ddb.send(new GetCommand({ TableName: tables.handoffs, Key: { handoffId } }));
@@ -48,6 +49,7 @@ export async function createHandoff(
     createdAt: nowIso(),
   };
 
+  const startedAt = Date.now();
   try {
     await ddb.send(
       new TransactWriteCommand({
@@ -77,6 +79,14 @@ export async function createHandoff(
     }
     throw err;
   }
+  logTransition(pickup.pickupId, 'collected', 'handed_off', collectorId, startedAt);
+  await raiseAlert({
+    type: 'handoff',
+    pickupId: pickup.pickupId,
+    message: `Pickup at ${pickup.address} handed off to ${input.facilityName}${
+      pickup.weightKg !== undefined ? ` (${pickup.weightKg} kg)` : ''
+    }; awaiting recycler confirmation.`,
+  });
   return handoff;
 }
 
@@ -94,6 +104,7 @@ export async function confirmHandoff(handoffId: string, confirmedBy: string): Pr
   assertTransition(pickup.status, 'completed');
 
   const confirmedAt = nowIso();
+  const startedAt = Date.now();
   try {
     await ddb.send(
       new TransactWriteCommand({
@@ -124,5 +135,11 @@ export async function confirmHandoff(handoffId: string, confirmedBy: string): Pr
     }
     throw err;
   }
+  logTransition(pickup.pickupId, 'handed_off', 'completed', confirmedBy, startedAt);
+  await raiseAlert({
+    type: 'recycler_confirmed',
+    pickupId: pickup.pickupId,
+    message: `${handoff.facilityName} confirmed receipt of the pickup from ${pickup.address}. Chain of custody complete.`,
+  });
   return { ...handoff, confirmedByRecycler: true, confirmedAt };
 }

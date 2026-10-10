@@ -106,3 +106,19 @@ export interface CollectorSummary extends User {
   totalPickups: number;
   totalKgCollected: number;
 }
+
+export type AlertType = 'contamination' | 'handoff' | 'recycler_confirmed' | 'missed_pickup';
+
+export interface Alert {
+  alertId: string;
+  type: AlertType;
+  pickupId: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface AlertsResponse {
+  alerts: Alert[];
+  unreadCount: number;
+}

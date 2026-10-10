@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { BatchWriteCommand, type BatchWriteCommandInput, type BatchWriteCommandOutput } from '@aws-sdk/lib-dynamodb';
 import { ddb, tables } from '../config/aws';
 import { createUser, findUserByEmail } from '../services/userService';
-import type { Category, Handoff, Pickup, PickupStatus, Role, StatusHistoryEntry, User } from '../types';
+import type { Alert, Category, Handoff, Pickup, PickupStatus, Role, StatusHistoryEntry, User } from '../types';
 
 const PASSWORD = 'password123';
 
@@ -99,7 +99,7 @@ function printCredentials() {
   console.table(SEED_USERS.map(({ role, name, email }) => ({ role, name, email, password: PASSWORD })));
 }
 
-async function main() {
+export async function seed(): Promise<void> {
   if (await findUserByEmail(SEED_USERS[0].email)) {
     console.log('Seed data already present (admin user exists); skipping inserts.');
     printCredentials();
@@ -149,6 +149,21 @@ async function main() {
   await batchPut(tables.pickups, built.map((b) => b.pickup));
   await batchPut(tables.handoffs, built.flatMap((b) => (b.handoff ? [b.handoff] : [])));
 
+  // History for the Alerts panel: the contaminated pickup was flagged (and dealt with) earlier.
+  const alerts: Alert[] = built
+    .filter(({ pickup }) => pickup.mlContamination)
+    .map(({ pickup }) => ({
+      alertId: randomUUID(),
+      type: 'contamination',
+      pickupId: pickup.pickupId,
+      message: `Contamination flagged in ${pickup.declaredCategory} pickup at ${pickup.address} (confidence ${Math.round(
+        (pickup.mlConfidence ?? 0) * 100,
+      )}%). Check before it reaches the recycler.`,
+      createdAt: pickup.statusHistory[0].at,
+      read: true,
+    }));
+  await batchPut(tables.alerts, alerts);
+
   console.log('\nPickups:');
   console.table(
     built.map(({ pickup }) => ({
@@ -162,7 +177,9 @@ async function main() {
   printCredentials();
 }
 
-main().catch((err) => {
-  console.error('seed failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  seed().catch((err) => {
+    console.error('seed failed:', err);
+    process.exit(1);
+  });
+}

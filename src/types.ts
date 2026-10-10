@@ -72,3 +72,16 @@ declare global {
     }
   }
 }
+
+export const ALERT_TYPES = ['contamination', 'handoff', 'recycler_confirmed', 'missed_pickup'] as const;
+export type AlertType = (typeof ALERT_TYPES)[number];
+
+/** Operational alert: published to SNS and stored in recy-alerts for the admin dashboard. */
+export interface Alert {
+  alertId: string;
+  type: AlertType;
+  pickupId: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+}

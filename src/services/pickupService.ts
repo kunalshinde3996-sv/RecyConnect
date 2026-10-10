@@ -3,6 +3,8 @@ import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, tables } from '../config/aws';
 import { AppError } from '../utils/AppError';
 import type { AuthUser, Category, Pickup, PickupStatus, StatusHistoryEntry } from '../types';
+import { canSeeQrToken, sanitizeForViewer } from '../utils/sanitize';
+import { log } from '../utils/logger';
 import { isConditionalCheckFailed, nowIso, queryAll } from './db';
 
 /** The only legal forward move from each status. */
@@ -33,20 +35,12 @@ export function serializePickup(p: Pickup): Pickup {
 /** A pickup as returned to a specific viewer; qrToken is only present when they may see it. */
 export type PickupView = Omit<Pickup, 'qrToken'> & { qrToken?: string };
 
-/**
- * qrToken is the resident's proof-of-presence secret: the collector must scan it from the
- * resident's phone to mark a pickup collected. So it may only be shown to the resident who owns
- * the pickup and to admins. Every API response containing a pickup MUST go through this.
- */
-export function canSeeQrToken(viewer: AuthUser, pickup: Pick<Pickup, 'residentId'>): boolean {
-  return viewer.role === 'admin' || (viewer.role === 'resident' && viewer.userId === pickup.residentId);
-}
+// The rule lives in utils/sanitize, which ok() applies to every response body as a backstop.
+export { canSeeQrToken };
 
+/** Typed per-pickup form of the response sanitiser (also normalises collectorId). */
 export function toPickupView(pickup: Pickup, viewer: AuthUser): PickupView {
-  const view = serializePickup(pickup);
-  if (canSeeQrToken(viewer, pickup)) return view;
-  const { qrToken: _secret, ...rest } = view;
-  return rest;
+  return sanitizeForViewer(serializePickup(pickup), viewer);
 }
 
 /**
@@ -101,12 +95,25 @@ export function buildTransitionUpdate(params: {
   };
 }
 
-async function runTransition(input: ReturnType<typeof buildTransitionUpdate>): Promise<Pickup> {
+/** One structured log line per status change; CloudWatch Logs Insights can chart these. */
+export function logTransition(pickupId: string, from: PickupStatus, to: PickupStatus, by: string, startedAt: number) {
+  log().info(
+    { event: 'status_transition', pickupId, from, to, by, durationMs: Date.now() - startedAt },
+    `pickup ${pickupId}: ${from} -> ${to}`,
+  );
+}
+
+async function runTransition(input: ReturnType<typeof buildTransitionUpdate>, by: string): Promise<Pickup> {
+  const from = input.ExpressionAttributeValues[':from'] as PickupStatus;
+  const to = input.ExpressionAttributeValues[':to'] as PickupStatus;
+  const startedAt = Date.now();
   try {
     const out = await ddb.send(new UpdateCommand({ ...input, ReturnValues: 'ALL_NEW' }));
+    logTransition(input.Key.pickupId, from, to, by, startedAt);
     return serializePickup(out.Attributes as Pickup);
   } catch (err) {
     if (isConditionalCheckFailed(err)) {
+      log().warn({ event: 'status_transition_conflict', pickupId: input.Key.pickupId, from, to, by }, 'transition lost a race');
       throw AppError.conflict('Pickup was modified by another request; reload and try again');
     }
     throw err;
@@ -228,6 +235,7 @@ export async function assignPickup(pickupId: string, collectorId: string): Promi
       by: collectorId,
       set: { collectorId },
     }),
+    collectorId,
   );
 }
 
@@ -257,6 +265,7 @@ export async function collectPickup(
         values: { ':collector': collectorId, ':qr': input.qrToken },
       },
     }),
+    collectorId,
   );
 }
 

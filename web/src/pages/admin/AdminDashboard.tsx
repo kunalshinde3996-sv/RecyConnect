@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { api, errorMessage, PICKUP_STATUSES, type Pickup, type PickupStatus } from '../../api';
+import { api, errorMessage, PICKUP_STATUSES, type Alert, type AlertType, type Pickup, type PickupStatus } from '../../api';
 import { ContaminationBadge } from '../../components/MlResult';
 import { Modal } from '../../components/Modal';
 import { PickupTimeline } from '../../components/PickupTimeline';
@@ -67,6 +67,114 @@ function StatsCards({ refreshKey }: { refreshKey: number }) {
       </div>
       {error && <p className="text-xs text-amber-700">Live refresh failed: {error}</p>}
     </div>
+  );
+}
+
+const ALERT_META: Record<AlertType, { label: string; dot: string }> = {
+  contamination: { label: 'Contamination', dot: 'bg-red-500' },
+  missed_pickup: { label: 'Missed pickup', dot: 'bg-amber-500' },
+  handoff: { label: 'Hand-off', dot: 'bg-indigo-500' },
+  recycler_confirmed: { label: 'Recycler confirmed', dot: 'bg-emerald-500' },
+};
+
+function timeAgo(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 48 * 60) return `${Math.round(mins / 60)} h ago`;
+  return formatDateTime(iso);
+}
+
+/** Alerts raised by the backend (also published to SNS). Refreshes with the stats. */
+function AlertsPanel({ refreshKey, onOpenPickup }: { refreshKey: number; onOpenPickup: (pickupId: string) => void }) {
+  const { data, error, loading, reload } = useApi(() => api.admin.alerts(), [], { pollMs: REFRESH_MS });
+  useRefreshOn(refreshKey, reload);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const act = async (key: string, fn: () => Promise<unknown>) => {
+    setBusy(key);
+    setActionError(null);
+    try {
+      await fn();
+    } catch (err) {
+      setActionError(errorMessage(err));
+    } finally {
+      setBusy(null);
+      await reload();
+    }
+  };
+
+  const unread = data?.unreadCount ?? 0;
+  const open = (a: Alert) => {
+    onOpenPickup(a.pickupId);
+    if (!a.read) void act(a.alertId, () => api.admin.markAlertRead(a.alertId));
+  };
+
+  return (
+    <Card className="flex max-h-[26rem] flex-col !p-0" data-testid="alerts-panel">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 p-4">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+          Alerts
+          <span
+            data-testid="alerts-unread"
+            aria-label={`${unread} unread`}
+            className={`rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ${unread ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+          >
+            {unread}
+          </span>
+        </h2>
+        {unread > 0 && (
+          <Button
+            variant="ghost"
+            className="!min-h-8 !px-2 !py-1 text-xs"
+            busy={busy === 'all'}
+            disabled={busy !== null}
+            onClick={() => void act('all', () => api.admin.markAllAlertsRead())}
+          >
+            Mark all read
+          </Button>
+        )}
+      </div>
+      {actionError && (
+        <div className="p-3 pb-0">
+          <ErrorBox message={actionError} />
+        </div>
+      )}
+      {loading ? (
+        <Loading label="Loading alerts…" />
+      ) : error && !data ? (
+        <div className="p-4">
+          <ErrorBox message={error} onRetry={reload} />
+        </div>
+      ) : !data?.alerts.length ? (
+        <div className="p-4">
+          <Empty title="No alerts">Contamination, hand-offs, confirmations and missed pickups appear here.</Empty>
+        </div>
+      ) : (
+        <ul className="divide-y divide-slate-100 overflow-y-auto">
+          {data.alerts.map((a) => (
+            <li key={a.alertId} className={a.read ? '' : 'bg-amber-50/60'}>
+              <button
+                type="button"
+                onClick={() => open(a)}
+                className="block w-full p-3 text-left hover:bg-emerald-50/60 focus:bg-emerald-50 focus:outline-none"
+                aria-label={`${a.read ? '' : 'Unread: '}${ALERT_META[a.type].label}. ${a.message}`}
+              >
+                <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                  <span className={`h-2 w-2 rounded-full ${ALERT_META[a.type].dot}`} aria-hidden="true" />
+                  {ALERT_META[a.type].label}
+                  {!a.read && <span className="text-[10px] font-bold text-red-600 uppercase">New</span>}
+                  <span className="ml-auto font-normal text-slate-400">{timeAgo(a.createdAt)}</span>
+                </p>
+                <p className={`mt-1 text-sm ${a.read ? 'text-slate-600' : 'font-medium text-slate-900'}`}>{a.message}</p>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && data && <p className="px-4 pb-3 text-xs text-amber-700">Live refresh failed: {error}</p>}
+    </Card>
   );
 }
 
@@ -240,7 +348,9 @@ function CollectorsTable({ refreshKey }: { refreshKey: number }) {
   );
 }
 
-function TimelineModal({ pickup, onClose, onChanged }: { pickup: Pickup; onClose: () => void; onChanged: () => void }) {
+type PickupRef = Pick<Pickup, 'pickupId'> & { address?: string };
+
+function TimelineModal({ pickup, onClose, onChanged }: { pickup: PickupRef; onClose: () => void; onChanged: () => void }) {
   const { data, error, loading, reload } = useApi(() => api.pickups.timeline(pickup.pickupId), [pickup.pickupId], { pollMs: REFRESH_MS });
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -266,7 +376,7 @@ function TimelineModal({ pickup, onClose, onChanged }: { pickup: Pickup; onClose
       onClose={onClose}
       title={
         <>
-          {pickup.address} <span className="font-mono text-xs font-normal text-slate-400">#{shortId(pickup.pickupId)}</span>
+          {pickup.address ?? 'Pickup'} <span className="font-mono text-xs font-normal text-slate-400">#{shortId(pickup.pickupId)}</span>
         </>
       }
     >
@@ -296,7 +406,7 @@ function TimelineModal({ pickup, onClose, onChanged }: { pickup: Pickup; onClose
 }
 
 export function AdminDashboard() {
-  const [selected, setSelected] = useState<Pickup | null>(null);
+  const [selected, setSelected] = useState<PickupRef | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
   const close = useCallback(() => setSelected(null), []);
@@ -307,7 +417,10 @@ export function AdminDashboard() {
         Operations dashboard
       </PageTitle>
       <div className="space-y-6">
-        <StatsCards refreshKey={refreshKey} />
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <StatsCards refreshKey={refreshKey} />
+          <AlertsPanel refreshKey={refreshKey} onOpenPickup={(pickupId) => setSelected({ pickupId })} />
+        </div>
         <PickupsTable onOpen={setSelected} refreshKey={refreshKey} onChanged={bump} />
         <CollectorsTable refreshKey={refreshKey} />
       </div>

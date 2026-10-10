@@ -20,7 +20,7 @@ function gsi(name: string, partitionKey: string) {
   };
 }
 
-function definitions(): CreateTableCommandInput[] {
+export function definitions(): CreateTableCommandInput[] {
   return [
     {
       TableName: tables.users,
@@ -71,10 +71,18 @@ function definitions(): CreateTableCommandInput[] {
         },
       ],
     },
+    {
+      // Small, admin-only table; listed with a Scan (see alertService). Add a GSI on createdAt
+      // if it ever needs paging.
+      TableName: tables.alerts,
+      BillingMode: 'PAY_PER_REQUEST',
+      AttributeDefinitions: [{ AttributeName: 'alertId', AttributeType: S }],
+      KeySchema: [{ AttributeName: 'alertId', KeyType: 'HASH' }],
+    },
   ];
 }
 
-/** Creates all tables (skipping existing ones) and waits until each is ACTIVE. */
+/** Creates all 4 tables (skipping existing ones) and waits until each is ACTIVE. */
 export async function createTables(): Promise<void> {
   for (const def of definitions()) {
     const name = def.TableName!;

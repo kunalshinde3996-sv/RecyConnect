@@ -2,10 +2,11 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { SQSClient } from '@aws-sdk/client-sqs';
+import { SNSClient } from '@aws-sdk/client-sns';
 import { env } from './env';
 
 /**
- * Shared AWS SDK v3 clients. Credentials come from the default provider chain:
+ * Shared AWS SDK v3 clients (DynamoDB, S3, SQS, SNS). Credentials come from the default provider chain:
  * AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY locally, the execution role on Lambda.
  * Clients are created once per container and reused across Lambda invocations.
  *
@@ -47,6 +48,8 @@ export const s3Presigner = new S3Client({
 
 export const sqs = new SQSClient(baseConfig);
 
+export const sns = new SNSClient(baseConfig);
+
 export const tables = {
   get users() {
     return env.tableUsers;
@@ -56,5 +59,8 @@ export const tables = {
   },
   get handoffs() {
     return env.tableHandoffs;
+  },
+  get alerts() {
+    return env.tableAlerts;
   },
 };

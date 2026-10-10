@@ -5,6 +5,7 @@ import { SendMessageCommand } from '@aws-sdk/client-sqs';
 import { s3, s3Presigner, sqs } from '../config/aws';
 import { env } from '../config/env';
 import { AppError } from '../utils/AppError';
+import { log } from '../utils/logger';
 import type { AuthUser, Pickup } from '../types';
 import { markPhotoQueued, requireAccessiblePickup, serializePickup, setMlStatus } from './pickupService';
 
@@ -73,8 +74,9 @@ export async function confirmUpload(user: AuthUser, pickupId: string, key: strin
     await sqs.send(
       new SendMessageCommand({ QueueUrl: env.sqsQueueUrl, MessageBody: JSON.stringify(message) }),
     );
+    log().info({ event: 'classification_queued', pickupId: pickup.pickupId, key }, 'photo queued for classification');
   } catch (err) {
-    console.error('[uploads] failed to enqueue classification', err);
+    log().error({ event: 'classification_enqueue_failed', pickupId: pickup.pickupId, key, err }, 'failed to enqueue classification');
     await setMlStatus(pickup.pickupId, 'none').catch(() => undefined);
     throw new AppError(502, 'Photo saved but classification could not be queued; please retry confirm');
   }

@@ -46,6 +46,18 @@ export const env = {
   get tableHandoffs(): string {
     return optional('TABLE_HANDOFFS', 'recy-handoffs');
   },
+  get tableAlerts(): string {
+    return optional('TABLE_ALERTS', 'recy-alerts');
+  },
+  /** SNS topic for operational alerts. Unset = alerts are stored and logged but not published. */
+  get snsTopicArn(): string | undefined {
+    return process.env.SNS_TOPIC_ARN || undefined;
+  },
+  /** An assigned pickup not collected within this many minutes is reported as missed (0 = immediately, for tests). */
+  get missedPickupMinutes(): number {
+    const n = Number(optional('MISSED_PICKUP_MINUTES', '30'));
+    return Number.isFinite(n) && n >= 0 ? n : 30;
+  },
   get s3Bucket(): string {
     return required('S3_BUCKET');
   },

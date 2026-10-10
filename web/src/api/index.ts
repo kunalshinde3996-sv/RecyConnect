@@ -1,6 +1,8 @@
 import { ApiError, http } from './client';
 import type {
   AdminStats,
+  Alert,
+  AlertsResponse,
   AuthResponse,
   Category,
   CollectorSummary,
@@ -52,6 +54,9 @@ export const api = {
     pickups: (status?: PickupStatus) =>
       http.get<Pickup[]>(`/api/admin/pickups${status ? `?status=${encodeURIComponent(status)}` : ''}`),
     collectors: () => http.get<CollectorSummary[]>('/api/admin/collectors'),
+    alerts: () => http.get<AlertsResponse>('/api/admin/alerts'),
+    markAlertRead: (alertId: string) => http.patch<Alert>(`/api/admin/alerts/${encodeURIComponent(alertId)}/read`),
+    markAllAlertsRead: () => http.post<{ updated: number }>('/api/admin/alerts/read-all'),
   },
 };
 

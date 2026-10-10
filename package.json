@@ -2,7 +2,7 @@
   "name": "recyconnect-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "RecyConnect Phase 1 backend: recyclable-waste traceability (API Gateway -> Lambda -> DynamoDB, S3 -> SQS -> worker)",
+  "description": "RecyConnect backend: recyclable-waste traceability (API Gateway -> Lambda -> DynamoDB, S3 -> SQS -> worker, SNS alerts)",
   "main": "dist/server.js",
   "engines": {
     "node": ">=20"
@@ -19,11 +19,17 @@
     "local:down": "docker compose down",
     "local:bootstrap": "tsx src/scripts/bootstrapLocal.ts",
     "test:e2e": "node tests/e2e.mjs",
-    "test:unit": "tsx --test tests/unit/*.test.ts"
+    "test:unit": "tsx --test tests/unit/*.test.ts",
+    "job:missed": "tsx src/jobs/missedPickups.ts",
+    "demo": "tsx src/scripts/demoPreflight.ts && concurrently --kill-others-on-fail -n api,worker,job,web -c green,magenta,yellow,cyan \"npm:dev\" \"npm:worker\" \"npm:job:missed -- --watch\" \"npm --prefix web run dev\"",
+    "demo:reset": "tsx src/scripts/demoReset.ts",
+    "test:ui": "npm --prefix web run test:ui",
+    "test": "npm run test:unit && npm run test:e2e && npm run test:ui"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1149.0",
     "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/client-sns": "^3.1149.0",
     "@aws-sdk/client-sqs": "^3.1149.0",
     "@aws-sdk/lib-dynamodb": "^3.1149.0",
     "@aws-sdk/s3-request-presigner": "^3.1149.0",
@@ -32,6 +38,7 @@
     "dotenv": "^18.0.7",
     "express": "^5.3.0",
     "jsonwebtoken": "^9.0.3",
+    "pino": "^10.4.0",
     "serverless-http": "^4.0.0",
     "zod": "^4.6.5"
   },
@@ -41,6 +48,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.19.43",
+    "concurrently": "^10.0.6",
     "tsx": "^4.23.15",
     "typescript": "~5.9"
   }

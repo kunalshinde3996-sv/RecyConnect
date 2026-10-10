@@ -4,10 +4,14 @@
 // resident and one completed pickup, so it can be repeated without resetting data.
 // Usage: npm run test:e2e   (override the API with E2E_API_URL=http://host:port)
 import 'dotenv/config';
+import { spawnSync } from 'node:child_process';
+import { CreateQueueCommand, DeleteQueueCommand, GetQueueAttributesCommand, ReceiveMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { SNSClient, SubscribeCommand, UnsubscribeCommand } from '@aws-sdk/client-sns';
 
 const API = process.env.E2E_API_URL || `http://localhost:${process.env.PORT || 5000}`;
 const BUCKET = process.env.S3_BUCKET;
 const AWS_ENDPOINT = process.env.AWS_ENDPOINT;
+const SNS_TOPIC_ARN = process.env.SNS_TOPIC_ARN;
 let passed = 0, failed = 0;
 const results = [];
 
@@ -31,7 +35,38 @@ async function api(method, path, { body, token } = {}) {
   responseLog.push({ token, method, path, status: r.status, text });
   let json = null;
   try { json = JSON.parse(text); } catch { /* non-JSON response */ }
-  return { status: r.status, json };
+  return { status: r.status, json, headers: r.headers };
+}
+
+/**
+ * LocalStack only: subscribes a throwaway SQS queue to the alerts topic, so the test can prove
+ * alerts really reach SNS subscribers (not just that Publish didn't throw).
+ */
+async function tapAlertsTopic() {
+  if (!AWS_ENDPOINT || !SNS_TOPIC_ARN) return null;
+  const cfg = { region: process.env.AWS_REGION || 'ap-south-1', endpoint: AWS_ENDPOINT, credentials: { accessKeyId: 'test', secretAccessKey: 'test' } };
+  const sqs = new SQSClient(cfg), sns = new SNSClient(cfg);
+  const { QueueUrl } = await sqs.send(new CreateQueueCommand({ QueueName: `recy-e2e-alerts-tap-${Date.now()}` }));
+  const { Attributes } = await sqs.send(new GetQueueAttributesCommand({ QueueUrl, AttributeNames: ['QueueArn'] }));
+  const { SubscriptionArn } = await sns.send(new SubscribeCommand({
+    TopicArn: SNS_TOPIC_ARN, Protocol: 'sqs', Endpoint: Attributes.QueueArn, Attributes: { RawMessageDelivery: 'true' },
+  }));
+  // (On real AWS the queue would also need a policy allowing the topic to SendMessage; LocalStack skips that.)
+  return {
+    async drain() {
+      const alerts = [];
+      for (let i = 0; i < 5; i++) {
+        const out = await sqs.send(new ReceiveMessageCommand({ QueueUrl, MaxNumberOfMessages: 10, WaitTimeSeconds: 1 }));
+        for (const m of out.Messages ?? []) { try { alerts.push(JSON.parse(m.Body)); } catch { /* ignore */ } }
+        if (!out.Messages?.length && alerts.length) break;
+      }
+      return alerts;
+    },
+    async close() {
+      await sns.send(new UnsubscribeCommand({ SubscriptionArn })).catch(() => {});
+      await sqs.send(new DeleteQueueCommand({ QueueUrl })).catch(() => {});
+    },
+  };
 }
 
 // 1x1 transparent PNG
@@ -45,6 +80,14 @@ async function main() {
     process.exit(1);
   }
   console.log(`E2E against ${API} (${AWS_ENDPOINT ? `LocalStack ${AWS_ENDPOINT}` : 'real AWS'})\n`);
+
+  // --- Monitoring ---
+  const health = await api('GET', '/api/health');
+  const deps = health.json?.data?.dependencies ?? {};
+  check('GET /api/health -> 200, DynamoDB/S3/SQS/SNS all ok',
+    health.status === 200 && ['dynamodb', 's3', 'sqs', 'sns'].every((d) => deps[d]?.status === 'ok'), JSON.stringify(health.json));
+  check('responses carry an x-request-id', /^[\w-]{8,}$/.test(health.headers.get('x-request-id') ?? ''), String(health.headers.get('x-request-id')));
+  const tap = await tapAlertsTopic();
 
   // --- Auth ---
   const email = `e2e.${Date.now()}@test.dev`;
@@ -87,6 +130,22 @@ async function main() {
   check('collector assigns -> assigned', r.status === 200 && r.json.data.status === 'assigned' && !('qrToken' in r.json.data), JSON.stringify(r.json));
   r = await api('PATCH', `/api/pickups/${pickup.pickupId}/assign`, { token: collector2 });
   check('second collector assign -> 409', r.status === 409, `${r.status}`);
+
+  // --- Missed-pickup job (threshold 0 so this freshly assigned pickup counts as overdue) ---
+  const runJob = (logLevel) => spawnSync('npx tsx src/jobs/missedPickups.ts', {
+    env: { ...process.env, MISSED_PICKUP_MINUTES: '0', LOG_LEVEL: logLevel }, encoding: 'utf8', shell: true,
+  });
+  const job = runJob('info');
+  const jobLine = job.stdout.split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).find((l) => l?.event === 'job_missed_pickups');
+  check('job:missed runs and logs a structured summary', job.status === 0 && jobLine && jobLine.overdue >= 1, `${job.status} ${job.stderr?.slice(0, 300)} ${job.stdout?.slice(0, 300)}`);
+  r = await api('GET', '/api/admin/alerts', { token: admin });
+  check('missed_pickup alert stored for this pickup',
+    r.status === 200 && r.json.data.alerts.some((a) => a.type === 'missed_pickup' && a.pickupId === pickup.pickupId && a.read === false), JSON.stringify(r.json?.data?.alerts?.slice(0, 3)));
+  runJob('silent');
+  r = await api('GET', '/api/admin/alerts', { token: admin });
+  check('re-running job:missed does not duplicate the alert',
+    r.json.data.alerts.filter((a) => a.type === 'missed_pickup' && a.pickupId === pickup.pickupId).length === 1);
+
   r = await api('GET', '/api/pickups/assigned', { token: collector });
   check('GET /assigned includes it', r.json.data.some((p) => p.pickupId === pickup.pickupId));
   r = await api('GET', `/api/pickups/${pickup.pickupId}/timeline`, { token: collector2 });
@@ -161,6 +220,31 @@ async function main() {
   check('admin confirms handoff -> confirmed', r.status === 200 && r.json.data.confirmedByRecycler === true && r.json.data.confirmedAt, JSON.stringify(r.json));
   r = await api('PATCH', `/api/handoffs/${handoff.handoffId}/confirm`, { token: admin });
   check('re-confirm -> 409', r.status === 409, `${r.status}`);
+
+  // --- Alerts (SNS + recy-alerts table) ---
+  r = await api('GET', '/api/admin/alerts', { token: admin });
+  const mine = r.json?.data?.alerts?.filter((a) => a.pickupId === pickup.pickupId) ?? [];
+  const types = new Set(mine.map((a) => a.type));
+  check('alerts stored for handoff + recycler confirmation', types.has('handoff') && types.has('recycler_confirmed'), JSON.stringify(mine));
+  // One-directional: the resident's first photo may also have been classified (and flagged) before the collector replaced it.
+  check('contamination flagged by the worker -> contamination alert', !ml?.contamination || types.has('contamination'), `ml=${JSON.stringify(ml)} types=${[...types]}`);
+  check('alerts list reports unreadCount', typeof r.json?.data?.unreadCount === 'number' && r.json.data.unreadCount >= mine.length);
+  r = await api('GET', '/api/admin/alerts', { token: collector });
+  check('collector on admin alerts -> 403', r.status === 403);
+  const toRead = mine.find((a) => a.type === 'handoff');
+  r = await api('PATCH', `/api/admin/alerts/${toRead?.alertId}/read`, { token: admin });
+  check('mark alert read -> read: true', r.status === 200 && r.json.data.read === true, JSON.stringify(r.json));
+  r = await api('PATCH', '/api/admin/alerts/does-not-exist/read', { token: admin });
+  check('mark unknown alert read -> 404', r.status === 404, `${r.status}`);
+  if (tap) {
+    const published = (await tap.drain()).filter((a) => a.pickupId === pickup.pickupId);
+    await tap.close();
+    const pubTypes = new Set(published.map((a) => a.type));
+    check('SNS subscriber received handoff, recycler_confirmed and missed_pickup alerts',
+      ['handoff', 'recycler_confirmed', 'missed_pickup'].every((t) => pubTypes.has(t)), JSON.stringify(published));
+  } else {
+    console.log('(skipping SNS delivery check: needs LocalStack + SNS_TOPIC_ARN)');
+  }
 
   // --- Timeline ---
   r = await api('GET', `/api/pickups/${pickup.pickupId}/timeline`, { token: resident });
