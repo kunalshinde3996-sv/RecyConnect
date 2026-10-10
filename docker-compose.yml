@@ -1,0 +1,18 @@
+services:
+  localstack:
+    # Pinned to the last LocalStack release that runs without an account. Newer images
+    # (2026.x / latest) refuse to start unless LOCALSTACK_AUTH_TOKEN is set; to use one,
+    # set LOCALSTACK_IMAGE=localstack/localstack:latest and LOCALSTACK_AUTH_TOKEN in your shell.
+    image: ${LOCALSTACK_IMAGE:-localstack/localstack:4.14.0}
+    container_name: recyconnect-localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3,sqs,dynamodb
+      - AWS_DEFAULT_REGION=ap-south-1
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
+    volumes:
+      - localstack-data:/var/lib/localstack
+
+volumes:
+  localstack-data:
