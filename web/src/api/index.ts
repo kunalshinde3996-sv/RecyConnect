@@ -10,6 +10,7 @@ import type {
   Pickup,
   PickupStatus,
   PresignResponse,
+  RatesResponse,
   Timeline,
   User,
 } from './types';
@@ -26,7 +27,7 @@ export const api = {
   },
 
   pickups: {
-    create: (input: { address: string; declaredCategory: Category; notes?: string }) =>
+    create: (input: { address: string; declaredCategory: Category; notes?: string; estimatedWeightKg?: number }) =>
       http.post<Pickup>('/api/pickups', input),
     mine: () => http.get<Pickup[]>('/api/pickups/mine'),
     available: () => http.get<Pickup[]>('/api/pickups/available'),
@@ -48,6 +49,8 @@ export const api = {
       http.post<Handoff>('/api/handoffs', { pickupId, facilityName }),
     confirm: (handoffId: string) => http.patch<Handoff>(`/api/handoffs/${handoffId}/confirm`),
   },
+
+  rates: () => http.get<RatesResponse>('/api/rates'),
 
   admin: {
     stats: () => http.get<AdminStats>('/api/admin/stats'),

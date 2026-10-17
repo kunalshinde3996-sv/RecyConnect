@@ -12,6 +12,7 @@ const createSchema = z.object({
   address: z.string().trim().min(1).max(500),
   notes: z.string().trim().max(1000).optional(),
   declaredCategory: z.enum(CATEGORIES),
+  estimatedWeightKg: z.number().positive().max(10_000).optional(),
 });
 
 const collectSchema = z.object({

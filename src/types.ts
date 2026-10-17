@@ -42,6 +42,13 @@ export interface Pickup {
   mlConfidence?: number;
   mlStatus: MlStatus;
   weightKg?: number;
+  /** Resident's approximate weight at request time. */
+  estimatedWeightKg?: number;
+  /** INR/kg snapshot for declaredCategory at creation (see config/rates). */
+  rateInrPerKg?: number;
+  estimatedValueInr?: number;
+  /** rateInrPerKg × weightKg, set on collect. */
+  finalValueInr?: number;
   photoKey?: string;
   createdAt: string;
   updatedAt: string;

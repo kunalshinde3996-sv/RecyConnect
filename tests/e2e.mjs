@@ -113,10 +113,24 @@ async function main() {
 
   const statsBefore = (await api('GET', '/api/admin/stats', { token: admin })).json.data;
 
+  // --- Rates ---
+  r = await api('GET', '/api/rates', { token: resident });
+  const rates = r.json?.data?.ratesPerKg ?? {};
+  check('GET /api/rates -> 200 INR rates for every category + disclaimer',
+    r.status === 200 && r.json.data.currency === 'INR' && ['plastic', 'paper', 'mixed'].every((c) => rates[c] > 0) && r.json.data.disclaimer,
+    JSON.stringify(r.json));
+  r = await api('GET', '/api/rates');
+  check('GET /api/rates without token -> 401', r.status === 401, `${r.status}`);
+  r = await api('POST', '/api/pickups', { token: resident, body: { address: '1 Test Lane', declaredCategory: 'plastic', estimatedWeightKg: -1 } });
+  check('create pickup with estimatedWeightKg -1 -> 400', r.status === 400, `${r.status}`);
+
   // --- Create pickup ---
-  r = await api('POST', '/api/pickups', { token: resident, body: { address: '1 Test Lane, Bengaluru', notes: 'e2e', declaredCategory: 'plastic' } });
+  r = await api('POST', '/api/pickups', { token: resident, body: { address: '1 Test Lane, Bengaluru', notes: 'e2e', declaredCategory: 'plastic', estimatedWeightKg: 2.5 } });
   check('resident creates pickup -> 201 pending', r.status === 201 && r.json.data.status === 'pending' && r.json.data.qrToken && r.json.data.collectorId === null, JSON.stringify(r.json));
   const pickup = r.json.data;
+  check('new pickup snapshots rate and estimatedValueInr = 2.5 x plastic rate',
+    pickup.rateInrPerKg === rates.plastic && pickup.estimatedWeightKg === 2.5 && pickup.estimatedValueInr === 2.5 * rates.plastic && pickup.finalValueInr === undefined,
+    JSON.stringify(pickup));
   r = await api('GET', '/api/pickups/mine', { token: resident });
   check('GET /mine includes new pickup', r.json.data.some((p) => p.pickupId === pickup.pickupId));
 
@@ -207,6 +221,7 @@ async function main() {
   check('collect by non-assignee -> 403', r.status === 403, `${r.status}`);
   r = await api('PATCH', `/api/pickups/${pickup.pickupId}/collect`, { token: collector, body: { qrToken: pickup.qrToken, weightKg: 5.5 } });
   check('collect with qrToken -> collected, 5.5kg', r.status === 200 && r.json.data.status === 'collected' && r.json.data.weightKg === 5.5, JSON.stringify(r.json));
+  check('collect sets finalValueInr = 5.5 x plastic rate', r.json?.data?.finalValueInr === 5.5 * rates.plastic, JSON.stringify(r.json?.data));
 
   // --- Handoff ---
   r = await api('POST', '/api/handoffs', { token: collector, body: { pickupId: pickup.pickupId, facilityName: 'E2E Recycling Facility' } });

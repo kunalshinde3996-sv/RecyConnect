@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, tables } from '../config/aws';
+import { rateFor, valueInr } from '../config/rates';
 import { AppError } from '../utils/AppError';
 import type { AuthUser, Category, Pickup, PickupStatus, StatusHistoryEntry } from '../types';
 import { canSeeQrToken, sanitizeForViewer } from '../utils/sanitize';
@@ -194,10 +195,13 @@ export interface CreatePickupInput {
   address: string;
   notes?: string;
   declaredCategory: Category;
+  estimatedWeightKg?: number;
 }
 
 export async function createPickup(residentId: string, input: CreatePickupInput): Promise<Pickup> {
   const now = nowIso();
+  // Snapshot the rate so later rate changes don't alter this pickup's estimate or final value.
+  const rateInrPerKg = rateFor(input.declaredCategory);
   // collectorId is deliberately omitted (not null): it's a GSI key, and DynamoDB rejects
   // NULL-typed index keys. Omitting it keeps collectorId-index sparse.
   const pickup: Pickup = {
@@ -208,6 +212,11 @@ export async function createPickup(residentId: string, input: CreatePickupInput)
     status: 'pending',
     qrToken: randomUUID(),
     declaredCategory: input.declaredCategory,
+    rateInrPerKg,
+    ...(input.estimatedWeightKg !== undefined && {
+      estimatedWeightKg: input.estimatedWeightKg,
+      estimatedValueInr: valueInr(rateInrPerKg, input.estimatedWeightKg),
+    }),
     mlStatus: 'none',
     createdAt: now,
     updatedAt: now,
@@ -259,7 +268,11 @@ export async function collectPickup(
       from: 'assigned',
       to: 'collected',
       by: collectorId,
-      set: { weightKg: input.weightKg },
+      set: {
+        weightKg: input.weightKg,
+        // Fallback covers pickups created before rates were snapshotted.
+        finalValueInr: valueInr(pickup.rateInrPerKg ?? rateFor(pickup.declaredCategory), input.weightKg),
+      },
       extraCondition: {
         expression: 'collectorId = :collector AND qrToken = :qr',
         values: { ':collector': collectorId, ':qr': input.qrToken },

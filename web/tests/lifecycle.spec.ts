@@ -41,9 +41,12 @@ test('full pickup lifecycle across resident, collector and admin', async ({ brow
   const resident = await loginAs(browser, 'arjun.resident@recyconnect.dev');
   await resident.getByLabel('Pickup address').fill(address);
   await resident.getByLabel('What are you recycling?').selectOption('plastic');
+  await resident.getByLabel('Approximate weight (kg)').fill('2.5');
+  await expect(resident.getByTestId('value-estimate')).toContainText('₹30.00');
   await resident.getByLabel('Notes for the collector (optional)').fill('Rinsed PET bottles by the gate');
   await resident.getByRole('button', { name: 'Request pickup' }).click();
   await expect(resident.getByText('Pickup requested!')).toBeVisible();
+  await expect(resident.getByTestId('value-card')).toContainText('₹30.00');
   const qrToken = (await resident.getByTestId('qr-token').textContent())!.trim();
   expect(qrToken).toMatch(/^[0-9a-f-]{36}$/);
 

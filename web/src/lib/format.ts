@@ -33,6 +33,14 @@ export function formatKg(kg: number | null | undefined): string {
   return `${kg.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg`;
 }
 
+const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** 1234.5 -> "₹1,234.50" */
+export function formatInr(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined) return '-';
+  return inr.format(amount);
+}
+
 export function shortId(id: string): string {
   return id.slice(0, 8);
 }

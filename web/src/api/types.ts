@@ -43,10 +43,24 @@ export interface Pickup {
   mlConfidence?: number;
   mlStatus: MlStatus;
   weightKg?: number;
+  /** Resident's approximate weight at request time. */
+  estimatedWeightKg?: number;
+  /** INR/kg snapshot for declaredCategory, taken when the pickup was created. */
+  rateInrPerKg?: number;
+  estimatedValueInr?: number;
+  /** rateInrPerKg × collector-measured weightKg; set on collect. */
+  finalValueInr?: number;
   photoKey?: string;
   createdAt: string;
   updatedAt: string;
   statusHistory: StatusHistoryEntry[];
+}
+
+/** Placeholder rates for the indicative value estimate (not real market rates). */
+export interface RatesResponse {
+  currency: 'INR';
+  ratesPerKg: Record<Category, number>;
+  disclaimer: string;
 }
 
 export interface Handoff {

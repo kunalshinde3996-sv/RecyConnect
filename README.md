@@ -320,12 +320,12 @@ All responses are `{ "success": true, "data": ... }` or `{ "success": false, "me
 | `POST /api/auth/register` | public | `{ name, email, password (≥8), phone?, role? }`; role is `resident` (default) or `collector` — admins can't self-register |
 | `POST /api/auth/login` | public | `{ email, password }` → `{ token, user }` |
 | `GET /api/auth/me` | any | current user |
-| `POST /api/pickups` | resident | `{ address, notes?, declaredCategory: plastic\|paper\|mixed }`; generates `qrToken` |
+| `POST /api/pickups` | resident | `{ address, notes?, declaredCategory: plastic\|paper\|mixed, estimatedWeightKg? }`; generates `qrToken`, snapshots `rateInrPerKg`, sets `estimatedValueInr` if a weight is given |
 | `GET /api/pickups/mine` | resident | own pickups incl. `qrToken` (render it as the QR code) |
 | `GET /api/pickups/available` | collector | pending pickups (`qrToken` stripped) |
 | `GET /api/pickups/assigned` | collector | pickups this collector claimed (`qrToken` stripped) |
 | `PATCH /api/pickups/:id/assign` | collector | pending → assigned |
-| `PATCH /api/pickups/:id/collect` | collector (assignee) | `{ qrToken, weightKg }`; wrong token → 400; assigned → collected |
+| `PATCH /api/pickups/:id/collect` | collector (assignee) | `{ qrToken, weightKg }`; wrong token → 400; assigned → collected; sets `finalValueInr` |
 | `GET /api/pickups/:id/timeline` | owner resident, assigned collector, admin | status history with actor names, handoffs, ML result, and `photoUrl` (presigned GET, valid 15 min, `null` if no photo) |
 | `POST /api/uploads/presign` | anyone with access to the pickup | `{ pickupId, contentType: image/jpeg\|image/png }` → `{ uploadUrl, key, headers, expiresIn }` |
 | `POST /api/uploads/confirm` | anyone with access to the pickup | `{ pickupId, key }`; verifies the object exists, sets `photoKey`, `mlStatus='queued'`, enqueues `{ pickupId, key }` → 202 |
@@ -337,6 +337,7 @@ All responses are `{ "success": true, "data": ... }` or `{ "success": false, "me
 | `GET /api/admin/alerts` | admin | `{ alerts (newest 50), unreadCount }` |
 | `PATCH /api/admin/alerts/:id/read` | admin | mark one alert read |
 | `POST /api/admin/alerts/read-all` | admin | mark all read → `{ updated }` |
+| `GET /api/rates` | any | `{ currency: 'INR', ratesPerKg, disclaimer }` (placeholder rates, see Value estimate) |
 | `GET /api/health` | public | DynamoDB / S3 / SQS / SNS connectivity; 200 or 503 (see Monitoring) |
 | `GET /health` | public | liveness only (process is up) |
 
@@ -350,6 +351,15 @@ await api.post('/api/uploads/confirm', { pickupId, key: data.key });            
 ```
 
 The `Content-Type` header on the PUT must match what was presigned or S3 returns 403.
+
+## Value estimate
+
+When requesting a pickup, the resident enters an approximate weight (and can attach a photo). The form shows an indicative value: **rate (INR/kg for the declared category) × weight**. After the collector weighs the waste, the pickup page also shows the **final value: same rate × measured weight**.
+
+- Rates live in `src/config/rates.ts` (plastic ₹12, paper ₹8, mixed ₹5 per kg). **These are placeholders, not real market rates.**
+- The rate is snapshotted onto the pickup (`rateInrPerKg`) at creation, so later rate changes don't alter existing estimates. Pickups created before this feature fall back to the current rate on collect.
+- Value is based on `declaredCategory`, not the ML category (the classifier is a mock).
+- It's informational only: the app makes no payments, has no wallet, and there's no rate-editing UI.
 
 ## Async classifier worker
 

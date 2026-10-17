@@ -6,7 +6,7 @@ import { PickupTimeline } from '../../components/PickupTimeline';
 import { ErrorBox, Loading, Notice } from '../../components/States';
 import { Button, Card } from '../../components/ui';
 import { useApi } from '../../hooks/useApi';
-import { formatDateTime } from '../../lib/format';
+import { formatDateTime, formatInr, formatKg } from '../../lib/format';
 
 function QrCard({ pickup }: { pickup: Pickup }) {
   const [copied, setCopied] = useState(false);
@@ -47,10 +47,35 @@ function QrCard({ pickup }: { pickup: Pickup }) {
   );
 }
 
+function ValueCard({ pickup, disclaimer }: { pickup: Pickup; disclaimer?: string }) {
+  const { estimatedValueInr, finalValueInr, rateInrPerKg } = pickup;
+  if (estimatedValueInr === undefined && finalValueInr === undefined) return null;
+  const rate = rateInrPerKg !== undefined ? ` × ${formatInr(rateInrPerKg)}/kg` : '';
+
+  return (
+    <Card data-testid="value-card">
+      <h2 className="text-sm font-semibold text-slate-500">Value estimate</h2>
+      {estimatedValueInr !== undefined && (
+        <div className="mt-2">
+          <p className="text-xs text-slate-500">Estimated ({formatKg(pickup.estimatedWeightKg)}{rate})</p>
+          <p className="text-lg font-semibold text-slate-900">{formatInr(estimatedValueInr)}</p>
+        </div>
+      )}
+      {finalValueInr !== undefined && (
+        <div className="mt-2">
+          <p className="text-xs text-slate-500">Final ({formatKg(pickup.weightKg)} weighed by collector{rate})</p>
+          <p className="text-lg font-semibold text-emerald-700">{formatInr(finalValueInr)}</p>
+        </div>
+      )}
+      {disclaimer && <p className="mt-3 text-xs text-slate-400">{disclaimer}</p>}
+    </Card>
+  );
+}
+
 export function ResidentPickupDetail() {
   const { id = '' } = useParams();
   const location = useLocation();
-  const justCreated = (location.state as { justCreated?: boolean } | null)?.justCreated;
+  const { justCreated, photoFailed } = (location.state as { justCreated?: boolean; photoFailed?: boolean } | null) ?? {};
 
   // /mine is the only resident endpoint that includes qrToken + address; the timeline has the custody chain.
   const pickupQ = useApi(async () => {
@@ -60,6 +85,7 @@ export function ResidentPickupDetail() {
     return found;
   }, [id], { pollMs: 5000 });
   const timelineQ = useApi(() => api.pickups.timeline(id), [id], { pollMs: 5000 });
+  const ratesQ = useApi(() => api.rates(), []);
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
@@ -67,6 +93,9 @@ export function ResidentPickupDetail() {
         ← My pickups
       </Link>
       {justCreated && <Notice>Pickup requested! A collector will claim it soon. Keep this QR code handy.</Notice>}
+      {photoFailed && (
+        <ErrorBox message="Your pickup was created, but the photo could not be uploaded. The collector can photograph the waste on arrival." />
+      )}
 
       {pickupQ.loading ? (
         <Loading />
@@ -76,6 +105,7 @@ export function ResidentPickupDetail() {
         <div className="grid gap-4 md:grid-cols-[18rem_1fr]">
           <div className="space-y-4">
             <QrCard pickup={pickupQ.data} />
+            <ValueCard pickup={pickupQ.data} disclaimer={ratesQ.data?.disclaimer} />
             <Card>
               <h2 className="text-sm font-semibold text-slate-500">Address</h2>
               <p className="mt-1 text-slate-900">{pickupQ.data.address}</p>

@@ -1,31 +1,55 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { api, CATEGORIES, errorMessage, type Category } from '../../api';
+import { api, CATEGORIES, errorMessage, uploadPickupPhoto, type Category } from '../../api';
 import { Empty, ErrorBox, Loading } from '../../components/States';
 import { StatusBadge } from '../../components/StatusBadge';
-import { Button, Card, Field, PageTitle, Select, Textarea } from '../../components/ui';
+import { Button, Card, Field, Input, PageTitle, Select, Textarea } from '../../components/ui';
 import { useApi } from '../../hooks/useApi';
-import { CATEGORY_LABEL, formatDateTime } from '../../lib/format';
+import { CATEGORY_LABEL, formatDateTime, formatInr } from '../../lib/format';
 
 function RequestPickupForm() {
   const navigate = useNavigate();
   const [address, setAddress] = useState('');
   const [category, setCategory] = useState<Category>('plastic');
   const [notes, setNotes] = useState('');
+  const [weight, setWeight] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rates = useApi(() => api.rates(), []);
+
+  const weightKg = Number(weight);
+  const rate = rates.data?.ratesPerKg[category];
+  const showEstimate = rate !== undefined && weight !== '' && weightKg > 0;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    let pickupId: string;
     try {
-      const pickup = await api.pickups.create({ address, declaredCategory: category, notes: notes.trim() || undefined });
-      navigate(`/resident/pickups/${pickup.pickupId}`, { state: { justCreated: true } });
+      const pickup = await api.pickups.create({
+        address,
+        declaredCategory: category,
+        notes: notes.trim() || undefined,
+        estimatedWeightKg: weightKg,
+      });
+      pickupId = pickup.pickupId;
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
+      return;
     }
+    // The pickup exists now; a failed photo upload must not block the resident.
+    let photoFailed = false;
+    if (photo) {
+      try {
+        await uploadPickupPhoto(pickupId, photo);
+      } catch {
+        photoFailed = true;
+      }
+    }
+    navigate(`/resident/pickups/${pickupId}`, { state: { justCreated: true, photoFailed } });
   };
 
   return (
@@ -44,6 +68,28 @@ function RequestPickupForm() {
               </option>
             ))}
           </Select>
+        </Field>
+        <Field label="Approximate weight (kg)">
+          <Input
+            type="number"
+            required
+            min={0.1}
+            max={10000}
+            step={0.1}
+            inputMode="decimal"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder="e.g. 2.5"
+          />
+        </Field>
+        {showEstimate && (
+          <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900" data-testid="value-estimate">
+            You could get about <strong>{formatInr(rate * weightKg)}</strong> ({formatInr(rate)}/kg × {weightKg} kg). Indicative only,
+            not a payment.
+          </p>
+        )}
+        <Field label="Photo of the waste (optional)" hint="JPEG or PNG. Helps the collector come prepared.">
+          <Input type="file" accept="image/jpeg,image/png" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
         </Field>
         <Field label="Notes for the collector (optional)">
           <Textarea rows={2} maxLength={1000} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Bags are by the gate" />

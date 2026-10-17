@@ -5,6 +5,7 @@ import { adminRouter } from './handlers/admin';
 import { authRouter } from './handlers/auth';
 import { handoffsRouter } from './handlers/handoffs';
 import { pickupsRouter } from './handlers/pickups';
+import { ratesRouter } from './handlers/rates';
 import { uploadsRouter } from './handlers/uploads';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
@@ -39,6 +40,7 @@ app.use('/api/pickups', pickupsRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/handoffs', handoffsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/rates', ratesRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
