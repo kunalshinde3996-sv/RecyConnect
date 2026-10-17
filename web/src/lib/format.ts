@@ -41,6 +41,13 @@ export function formatInr(amount: number | null | undefined): string {
   return inr.format(amount);
 }
 
+export const MIXED_NO_VALUE = 'Mixed waste has no buy-back value. Separate plastic and paper to earn.';
+
+/** "Rates as of 17 Oct 2026 · The Kabadiwala, Pune (indicative)" */
+export function ratesAsOfLine(rates: { asOf: string; sourceLabel: string }): string {
+  return `Rates as of ${rates.asOf} · ${rates.sourceLabel} (indicative)`;
+}
+
 export function shortId(id: string): string {
   return id.slice(0, 8);
 }

@@ -3,7 +3,7 @@ import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { ddb, tables } from '../config/aws';
 import { rateFor, valueInr } from '../config/rates';
 import { AppError } from '../utils/AppError';
-import type { AuthUser, Category, Pickup, PickupStatus, StatusHistoryEntry } from '../types';
+import type { AuthUser, Category, MlSource, Pickup, PickupStatus, StatusHistoryEntry } from '../types';
 import { canSeeQrToken, sanitizeForViewer } from '../utils/sanitize';
 import { log } from '../utils/logger';
 import { isConditionalCheckFailed, nowIso, queryAll } from './db';
@@ -289,7 +289,7 @@ export async function markPhotoQueued(pickupId: string, photoKey: string): Promi
       TableName: tables.pickups,
       Key: { pickupId },
       UpdateExpression:
-        'SET photoKey = :key, mlStatus = :queued, updatedAt = :now REMOVE mlCategory, mlContamination, mlConfidence',
+        'SET photoKey = :key, mlStatus = :queued, updatedAt = :now REMOVE mlCategory, mlContamination, mlConfidence, mlSource',
       ConditionExpression: 'attribute_exists(pickupId)',
       ExpressionAttributeValues: { ':key': photoKey, ':queued': 'queued', ':now': nowIso() },
       ReturnValues: 'ALL_NEW',
@@ -318,7 +318,7 @@ export async function setMlStatus(pickupId: string, mlStatus: Pickup['mlStatus']
 export async function writeMlResult(
   pickupId: string,
   photoKey: string,
-  result: { category: Category; contamination: boolean; confidence: number },
+  result: { category: Category; contamination: boolean; confidence: number; source: MlSource },
 ): Promise<boolean> {
   try {
     await ddb.send(
@@ -326,12 +326,13 @@ export async function writeMlResult(
         TableName: tables.pickups,
         Key: { pickupId },
         UpdateExpression:
-          'SET mlCategory = :cat, mlContamination = :cont, mlConfidence = :conf, mlStatus = :done, updatedAt = :now',
+          'SET mlCategory = :cat, mlContamination = :cont, mlConfidence = :conf, mlSource = :src, mlStatus = :done, updatedAt = :now',
         ConditionExpression: 'attribute_exists(pickupId) AND photoKey = :key',
         ExpressionAttributeValues: {
           ':cat': result.category,
           ':cont': result.contamination,
           ':conf': result.confidence,
+          ':src': result.source,
           ':done': 'done',
           ':now': nowIso(),
           ':key': photoKey,

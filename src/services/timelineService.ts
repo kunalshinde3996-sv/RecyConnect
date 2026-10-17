@@ -38,6 +38,7 @@ export async function getTimeline(user: AuthUser, pickupId: string) {
       category: pickup.mlCategory ?? null,
       contamination: pickup.mlContamination ?? null,
       confidence: pickup.mlConfidence ?? null,
+      source: pickup.mlSource ?? null,
     },
     history: pickup.statusHistory.map((h) => ({ ...h, actor: actors.get(h.by) ?? null })),
     handoffs,

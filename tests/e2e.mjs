@@ -116,8 +116,9 @@ async function main() {
   // --- Rates ---
   r = await api('GET', '/api/rates', { token: resident });
   const rates = r.json?.data?.ratesPerKg ?? {};
-  check('GET /api/rates -> 200 INR rates for every category + disclaimer',
-    r.status === 200 && r.json.data.currency === 'INR' && ['plastic', 'paper', 'mixed'].every((c) => rates[c] > 0) && r.json.data.disclaimer,
+  check('GET /api/rates -> 200 INR rates for every category + asOf, source, disclaimer',
+    r.status === 200 && r.json.data.currency === 'INR' && ['plastic', 'paper', 'mixed'].every((c) => rates[c] >= 0) && rates.plastic > 0 &&
+    r.json.data.asOf && r.json.data.source && r.json.data.disclaimer,
     JSON.stringify(r.json));
   r = await api('GET', '/api/rates');
   check('GET /api/rates without token -> 401', r.status === 401, `${r.status}`);
@@ -125,7 +126,7 @@ async function main() {
   check('create pickup with estimatedWeightKg -1 -> 400', r.status === 400, `${r.status}`);
 
   // --- Create pickup ---
-  r = await api('POST', '/api/pickups', { token: resident, body: { address: '1 Test Lane, Bengaluru', notes: 'e2e', declaredCategory: 'plastic', estimatedWeightKg: 2.5 } });
+  r = await api('POST', '/api/pickups', { token: resident, body: { address: 'Survey No. 12, Pune-Solapur Road, Loni Kalbhor, Pune 412201', notes: 'e2e', declaredCategory: 'plastic', estimatedWeightKg: 2.5 } });
   check('resident creates pickup -> 201 pending', r.status === 201 && r.json.data.status === 'pending' && r.json.data.qrToken && r.json.data.collectorId === null, JSON.stringify(r.json));
   const pickup = r.json.data;
   check('new pickup snapshots rate and estimatedValueInr = 2.5 x plastic rate',
@@ -212,7 +213,14 @@ async function main() {
     await new Promise((res) => setTimeout(res, 1000));
   }
   check('worker wrote ML result (mlStatus done)', ml?.status === 'done', JSON.stringify(ml));
-  check('ML result fields valid', ml?.category === 'plastic' && typeof ml.contamination === 'boolean' && ml.confidence >= 0.7 && ml.confidence <= 0.95, JSON.stringify(ml));
+  check('ML result records its source (clip or mock)', ml?.source === 'clip' || ml?.source === 'mock', JSON.stringify(ml));
+  // The mock echoes the declared category with confidence in [0.7, 0.95]; CLIP really looks at the
+  // (1x1 test) image, so only its shape can be checked.
+  check('ML result fields valid',
+    typeof ml?.contamination === 'boolean' && (ml.source === 'clip'
+      ? ['plastic', 'paper', 'mixed'].includes(ml.category) && ml.confidence >= 0 && ml.confidence <= 1
+      : ml.category === 'plastic' && ml.confidence >= 0.7 && ml.confidence <= 0.95),
+    JSON.stringify(ml));
 
   // --- Collect ---
   r = await api('PATCH', `/api/pickups/${pickup.pickupId}/collect`, { token: collector, body: { qrToken: '00000000-0000-0000-0000-000000000000', weightKg: 5.5 } });

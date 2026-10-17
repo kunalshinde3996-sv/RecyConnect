@@ -64,6 +64,10 @@ export const env = {
   get sqsQueueUrl(): string {
     return required('SQS_QUEUE_URL');
   },
+  /** Worker classifier: 'clip' (real zero-shot model, falls back to mock on error) or 'mock'. */
+  get classifier(): 'clip' | 'mock' {
+    return optional('CLASSIFIER', 'clip').toLowerCase() === 'mock' ? 'mock' : 'clip';
+  },
   get corsOrigin(): string {
     return optional('CORS_ORIGIN', 'http://localhost:5173');
   },

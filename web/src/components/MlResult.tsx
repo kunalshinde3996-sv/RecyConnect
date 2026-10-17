@@ -1,4 +1,4 @@
-import type { Timeline } from '../api';
+import type { MlSource, Timeline } from '../api';
 import { CATEGORY_LABEL } from '../lib/format';
 import { Spinner } from './States';
 
@@ -13,6 +13,20 @@ export function ContaminationBadge({ contaminated }: { contaminated: boolean }) 
   ) : (
     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-inset ring-emerald-200">
       No contamination
+    </span>
+  );
+}
+
+const SOURCE_TAG: Record<MlSource, { label: string; className: string }> = {
+  clip: { label: 'CLIP model', className: 'bg-sky-50 text-sky-800 ring-sky-200' },
+  mock: { label: 'Demo mock', className: 'bg-amber-50 text-amber-900 ring-amber-200' },
+};
+
+function SourceTag({ source }: { source: MlSource }) {
+  const tag = SOURCE_TAG[source];
+  return (
+    <span className={`ml-1 rounded px-1.5 py-0.5 align-middle text-[11px] font-semibold ring-1 ring-inset ${tag.className}`} data-testid="ml-source">
+      {tag.label}
     </span>
   );
 }
@@ -33,7 +47,7 @@ export function MlResult({ ml }: { ml: Timeline['ml'] }) {
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <span className="text-sm text-slate-500">
-          AI category <strong className="ml-1 text-base text-slate-900">{ml.category ? CATEGORY_LABEL[ml.category] : '-'}</strong>
+          Auto-check{ml.source && <SourceTag source={ml.source} />} <strong className="ml-1 text-base text-slate-900">{ml.category ? CATEGORY_LABEL[ml.category] : '-'}</strong>
         </span>
         {ml.confidence !== null && (
           <span className="text-sm text-slate-500">

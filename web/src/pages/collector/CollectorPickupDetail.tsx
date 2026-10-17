@@ -194,7 +194,7 @@ function HandoffStep({ timeline, onChanged }: { timeline: Timeline; onChanged: (
       ) : (
         <form onSubmit={submit} className="space-y-3">
           <Field label="Recycling facility">
-            <Input value={facility} onChange={(e) => setFacility(e.target.value)} maxLength={200} placeholder="e.g. GreenCycle MRF, Whitefield" />
+            <Input value={facility} onChange={(e) => setFacility(e.target.value)} maxLength={200} placeholder="e.g. GreenCycle MRF, Hadapsar Industrial Estate" />
           </Field>
           {error && <ErrorBox message={error} />}
           <Button type="submit" className="w-full" busy={busy}>

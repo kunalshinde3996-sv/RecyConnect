@@ -337,7 +337,7 @@ All responses are `{ "success": true, "data": ... }` or `{ "success": false, "me
 | `GET /api/admin/alerts` | admin | `{ alerts (newest 50), unreadCount }` |
 | `PATCH /api/admin/alerts/:id/read` | admin | mark one alert read |
 | `POST /api/admin/alerts/read-all` | admin | mark all read → `{ updated }` |
-| `GET /api/rates` | any | `{ currency: 'INR', ratesPerKg, disclaimer }` (placeholder rates, see Value estimate) |
+| `GET /api/rates` | any | `{ currency: 'INR', ratesPerKg, asOf, source, sourceLabel, disclaimer }` (see Value estimate) |
 | `GET /api/health` | public | DynamoDB / S3 / SQS / SNS connectivity; 200 or 503 (see Monitoring) |
 | `GET /health` | public | liveness only (process is up) |
 
@@ -356,9 +356,10 @@ The `Content-Type` header on the PUT must match what was presigned or S3 returns
 
 When requesting a pickup, the resident enters an approximate weight (and can attach a photo). The form shows an indicative value: **rate (INR/kg for the declared category) × weight**. After the collector weighs the waste, the pickup page also shows the **final value: same rate × measured weight**.
 
-- Rates live in `src/config/rates.ts` (plastic ₹12, paper ₹8, mixed ₹5 per kg). **These are placeholders, not real market rates.**
+- Rates live in `src/config/rates.ts`: plastic ₹10, paper ₹10, mixed ₹0 per kg, taken from [The Kabadiwala's Pune household scrap price list](https://www.thekabadiwala.com/scrap-rates/Pune) on 17 Oct 2026 ("Mix Plastic", "Carton"/"White Paper", "Other"). They're indicative; real prices vary by recycler, quality and quantity. `GET /api/rates` returns `asOf` and `source`, and the UI shows "Rates as of … (indicative)".
+- Mixed waste has no buy-back value, so the UI tells residents to separate plastic and paper instead of showing ₹0.
 - The rate is snapshotted onto the pickup (`rateInrPerKg`) at creation, so later rate changes don't alter existing estimates. Pickups created before this feature fall back to the current rate on collect.
-- Value is based on `declaredCategory`, not the ML category (the classifier is a mock).
+- Value is based on `declaredCategory`, not the ML category (the classifier is zero-shot and indicative).
 - It's informational only: the app makes no payments, has no wallet, and there's no rate-editing UI.
 
 ## Async classifier worker
@@ -367,9 +368,11 @@ When requesting a pickup, the resident enters an approximate weight (and can att
 - `handler` — Lambda handler for an SQS trigger. Returns `batchItemFailures` so only failed messages are retried (enable **Report batch item failures** on the event source mapping).
 - `npm run worker` — local long-polling loop (20 s wait, 10 messages/batch); deletes each message after it's processed.
 
-Per message: load pickup → skip if the photo has since been replaced (stale message) → `classifier.classify(...)` → write `mlCategory`, `mlContamination`, `mlConfidence`, `mlStatus='done'` (conditional on `photoKey` still matching).
+Per message: load pickup → skip if the photo has since been replaced (stale message) → `classifier.classify(...)` → write `mlCategory`, `mlContamination`, `mlConfidence`, `mlSource`, `mlStatus='done'` (conditional on `photoKey` still matching).
 
-**Swapping in a real model:** implement `WasteClassifier` from `src/ml/mockClassifier.ts` (e.g. a class that calls a SageMaker endpoint with the S3 object) and return it from `getClassifier()`. Nothing else changes.
+**Classifier (`CLASSIFIER=clip|mock`, default `clip`):** `src/ml/clipClassifier.ts` runs OpenAI's CLIP (`Xenova/clip-vit-base-patch32`) locally via `@huggingface/transformers`, free, no API key. It's **zero-shot**: it scores the photo against text prompts ("a photo of plastic waste", "… paper or cardboard waste", "… mixed household waste", and "clean recyclable material" vs "dirty waste with food or liquid" for contamination, flagged above 0.6). It was **not trained on waste data, so results are indicative only.** The model (~600 MB) downloads on first use and is cached in `node_modules/@huggingface/transformers/.cache` (a fresh `npm ci` clears it, so run the worker once before a demo); the worker starts loading it at startup. If CLIP fails or takes over 30 s, the worker logs `classifier_fallback` and uses `MockClassifier`. Each result stores `mlSource` (`clip` | `mock`), shown in the UI as a "CLIP model" or "Demo mock" tag. Seeded ML results are tagged `mock`. Unit tests use `CLASSIFIER=mock` and never download the model.
+
+**Swapping in another model:** implement `WasteClassifier` from `src/ml/mockClassifier.ts` and return it from `selectClassifier()` in `src/ml/selectClassifier.ts`. Nothing else changes.
 
 > Design note: SQS messages are sent by `/uploads/confirm` rather than by an S3 event notification. That way the API can validate ownership and the key prefix before anything is queued. Switching to S3 → SQS event notifications later only requires the worker to parse the S3 event shape.
 
@@ -433,11 +436,11 @@ Metric filters on these fields (e.g. `{ $.event = "worker_job" && $.outcome = "f
 On the login page, click an account in the *Demo accounts* list to fill it in, then **Sign in**.
 
 1. **(0:00) Admin, C: the starting point.** Point out the live stats and the **Alerts** panel. It already has a red unread badge: a **Missed pickup** (Priya's pickup, assigned to Ravi ~1 day ago, flagged by the scheduled job seconds after start) and an older, read **Contamination** alert. Say: "every alert is also published to SNS, so ops get an email or SMS."
-2. **(0:45) Resident, A: request a pickup.** Address `12 MG Road, Bengaluru 560001`, category *Plastic*, note "Bottles by the gate" → **Request pickup**. Show the QR code and the code text under it. Only this resident and admins can ever see it.
+2. **(0:45) Resident, A: request a pickup.** Address `Flat 302, Shanti Apartments, Paud Road, Kothrud, Pune 411038`, category *Plastic*, note "Bottles by the gate" → **Request pickup**. Show the QR code and the code text under it. Only this resident and admins can ever see it.
 3. **(1:30) Collector, B: claim it.** **Available** tab → the new pickup → **Claim pickup**. Back in C, the *Assigned* count goes up within 5 s.
 4. **(2:00) Collector, B: photo + AI.** **Take / upload photo** → choose `web/public/demo-photos/plastic-bottles.png` (also `paper-cardboard.png`, `mixed-waste.png`). The photo goes straight to S3; *Analysing photo…* turns into the AI category, confidence and contamination badge within a few seconds (S3 → SQS → worker). If contamination is flagged (the mock does this ~15% of the time), a **Contamination** alert appears in C. Use **Retake photo** to try again live.
 5. **(2:45) Collector, B: verify presence.** In A, click **Copy code** (or read it out). In B, paste it into *QR code* (or tap **Scan with camera** and point it at A's screen), weight `3.4` → **Confirm collection**. Optional: first paste a wrong code to show the rejection.
-6. **(3:30) Collector, B: hand off.** Facility `GreenCycle MRF, Whitefield` → **Record hand-off**. In C, a **Hand-off** alert appears and the unread badge goes up.
+6. **(3:30) Collector, B: hand off.** Facility `GreenCycle MRF, Hadapsar Industrial Estate` → **Record hand-off**. In C, a **Hand-off** alert appears and the unread badge goes up.
 7. **(4:00) Admin, C: confirm receipt.** Status filter **Handed off** → **Confirm recycler receipt** on the new row. A **Recycler confirmed** alert appears. Click it to open the full chain of custody: requested → assigned → collected (3.4 kg, photo, AI result) → handed off → completed, with who did each step and when.
 8. **(4:40) Close.** A shows *Completed*. Show the `[api]` terminal: JSON log lines with `status_transition`, `from`, `to`, `durationMs`, and the same `reqId` across a request. "On Lambda these go straight to CloudWatch Logs." Optionally open http://localhost:5000/api/health to show all four AWS dependencies green. **Mark all read** to tidy up.
 

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { QRCodeSVG } from 'qrcode.react';
-import { api, type Pickup } from '../../api';
+import { api, type Pickup, type RatesResponse } from '../../api';
 import { PickupTimeline } from '../../components/PickupTimeline';
 import { ErrorBox, Loading, Notice } from '../../components/States';
 import { Button, Card } from '../../components/ui';
 import { useApi } from '../../hooks/useApi';
-import { formatDateTime, formatInr, formatKg } from '../../lib/format';
+import { formatDateTime, formatInr, formatKg, MIXED_NO_VALUE, ratesAsOfLine } from '../../lib/format';
 
 function QrCard({ pickup }: { pickup: Pickup }) {
   const [copied, setCopied] = useState(false);
@@ -47,7 +47,7 @@ function QrCard({ pickup }: { pickup: Pickup }) {
   );
 }
 
-function ValueCard({ pickup, disclaimer }: { pickup: Pickup; disclaimer?: string }) {
+function ValueCard({ pickup, rates }: { pickup: Pickup; rates?: RatesResponse }) {
   const { estimatedValueInr, finalValueInr, rateInrPerKg } = pickup;
   if (estimatedValueInr === undefined && finalValueInr === undefined) return null;
   const rate = rateInrPerKg !== undefined ? ` × ${formatInr(rateInrPerKg)}/kg` : '';
@@ -67,7 +67,13 @@ function ValueCard({ pickup, disclaimer }: { pickup: Pickup; disclaimer?: string
           <p className="text-lg font-semibold text-emerald-700">{formatInr(finalValueInr)}</p>
         </div>
       )}
-      {disclaimer && <p className="mt-3 text-xs text-slate-400">{disclaimer}</p>}
+      {rateInrPerKg === 0 && <p className="mt-2 text-sm text-amber-900">{MIXED_NO_VALUE}</p>}
+      {rates && (
+        <>
+          <p className="mt-3 text-xs text-slate-500">{ratesAsOfLine(rates)}</p>
+          <p className="mt-1 text-xs text-slate-400">{rates.disclaimer}</p>
+        </>
+      )}
     </Card>
   );
 }
@@ -105,7 +111,7 @@ export function ResidentPickupDetail() {
         <div className="grid gap-4 md:grid-cols-[18rem_1fr]">
           <div className="space-y-4">
             <QrCard pickup={pickupQ.data} />
-            <ValueCard pickup={pickupQ.data} disclaimer={ratesQ.data?.disclaimer} />
+            <ValueCard pickup={pickupQ.data} rates={ratesQ.data} />
             <Card>
               <h2 className="text-sm font-semibold text-slate-500">Address</h2>
               <p className="mt-1 text-slate-900">{pickupQ.data.address}</p>

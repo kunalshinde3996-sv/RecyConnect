@@ -56,7 +56,7 @@ function buildPickup(spec: PickupSpec, admin: User): { pickup: Pickup; handoff?:
     declaredCategory: spec.category,
     mlStatus: spec.ml ? 'done' : 'none',
     ...(spec.ml
-      ? { mlCategory: spec.category, mlContamination: spec.ml.contamination, mlConfidence: spec.ml.confidence }
+      ? { mlCategory: spec.category, mlContamination: spec.ml.contamination, mlConfidence: spec.ml.confidence, mlSource: 'mock' as const }
       : {}),
     weightKg: spec.weightKg,
     photoKey,
@@ -73,7 +73,7 @@ function buildPickup(spec: PickupSpec, admin: User): { pickup: Pickup; handoff?:
       handoffId: randomUUID(),
       pickupId,
       collectorId: spec.collector!.userId,
-      facilityName: spec.facilityName ?? 'GreenCycle MRF, Whitefield',
+      facilityName: spec.facilityName ?? 'GreenCycle MRF, Hadapsar Industrial Estate',
       confirmedByRecycler: Boolean(completed),
       confirmedAt: completed?.at,
       createdAt: handedOffAt,
@@ -116,31 +116,31 @@ export async function seed(): Promise<void> {
   const specs: PickupSpec[] = [
     {
       resident: arjun, status: 'pending', category: 'plastic', daysAgo: 0,
-      address: '12 MG Road, Bengaluru 560001', notes: 'PET bottles, rinsed. Gate code 4521.',
+      address: 'Flat 302, Shanti Apartments, Paud Road, Kothrud, Pune 411038', notes: 'PET bottles, rinsed. Gate code 4521.',
     },
     {
       resident: priya, collector: ravi, status: 'assigned', category: 'paper', daysAgo: 1,
-      address: '45 Indiranagar 100ft Rd, Bengaluru 560038', notes: 'Old newspapers and cartons',
+      address: 'B-7, Sakore Nagar, Viman Nagar, Pune 411014', notes: 'Old newspapers and cartons',
     },
     {
       resident: kabir, collector: ravi, status: 'collected', category: 'mixed', daysAgo: 2,
-      address: '8 Koramangala 5th Block, Bengaluru 560095', weightKg: 4.2,
+      address: '21 Sasane Nagar, Hadapsar, Pune 411028', weightKg: 4.2,
       ml: { contamination: false, confidence: 0.81 },
     },
     {
       resident: arjun, collector: meena, status: 'handed_off', category: 'plastic', daysAgo: 3,
-      address: '12 MG Road, Bengaluru 560001', weightKg: 7.5,
-      ml: { contamination: false, confidence: 0.92 }, facilityName: 'GreenCycle MRF, Whitefield',
+      address: 'Flat 302, Shanti Apartments, Paud Road, Kothrud, Pune 411038', weightKg: 7.5,
+      ml: { contamination: false, confidence: 0.92 }, facilityName: 'GreenCycle MRF, Hadapsar Industrial Estate',
     },
     {
       resident: priya, collector: meena, status: 'completed', category: 'mixed', daysAgo: 5,
-      address: '45 Indiranagar 100ft Rd, Bengaluru 560038', weightKg: 12.0,
-      ml: { contamination: true, confidence: 0.74 }, facilityName: 'EcoLoop Recyclers, Peenya',
+      address: 'B-7, Sakore Nagar, Viman Nagar, Pune 411014', weightKg: 12.0,
+      ml: { contamination: true, confidence: 0.74 }, facilityName: 'EcoLoop Recyclers, Bhosari MIDC',
     },
     {
       resident: kabir, collector: ravi, status: 'completed', category: 'paper', daysAgo: 7,
-      address: '8 Koramangala 5th Block, Bengaluru 560095', weightKg: 3.1,
-      ml: { contamination: false, confidence: 0.88 }, facilityName: 'GreenCycle MRF, Whitefield',
+      address: '21 Sasane Nagar, Hadapsar, Pune 411028', weightKg: 3.1,
+      ml: { contamination: false, confidence: 0.88 }, facilityName: 'GreenCycle MRF, Hadapsar Industrial Estate',
     },
   ];
 

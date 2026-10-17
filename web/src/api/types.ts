@@ -4,6 +4,7 @@ export type Role = 'resident' | 'collector' | 'admin';
 export type PickupStatus = 'pending' | 'assigned' | 'collected' | 'handed_off' | 'completed';
 export type Category = 'plastic' | 'paper' | 'mixed';
 export type MlStatus = 'none' | 'queued' | 'done';
+export type MlSource = 'clip' | 'mock';
 
 export const PICKUP_STATUSES: PickupStatus[] = ['pending', 'assigned', 'collected', 'handed_off', 'completed'];
 export const CATEGORIES: Category[] = ['plastic', 'paper', 'mixed'];
@@ -41,6 +42,7 @@ export interface Pickup {
   mlCategory?: Category;
   mlContamination?: boolean;
   mlConfidence?: number;
+  mlSource?: MlSource;
   mlStatus: MlStatus;
   weightKg?: number;
   /** Resident's approximate weight at request time. */
@@ -56,10 +58,16 @@ export interface Pickup {
   statusHistory: StatusHistoryEntry[];
 }
 
-/** Placeholder rates for the indicative value estimate (not real market rates). */
+/** Household scrap rates for the indicative value estimate (see src/config/rates.ts for the source). */
 export interface RatesResponse {
   currency: 'INR';
   ratesPerKg: Record<Category, number>;
+  /** e.g. "17 Oct 2026" */
+  asOf: string;
+  /** Full source name. */
+  source: string;
+  /** Short source name for the UI line. */
+  sourceLabel: string;
   disclaimer: string;
 }
 
@@ -92,6 +100,8 @@ export interface Timeline {
     category: Category | null;
     contamination: boolean | null;
     confidence: number | null;
+    /** Which classifier produced the result; null before classification (or for old data). */
+    source: MlSource | null;
   };
   history: TimelineEntry[];
   handoffs: Handoff[];

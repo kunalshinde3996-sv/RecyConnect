@@ -2,7 +2,7 @@ import type { SQSBatchResponse, SQSEvent, SQSHandler } from 'aws-lambda';
 import { DeleteMessageCommand, ReceiveMessageCommand } from '@aws-sdk/client-sqs';
 import { sqs } from '../config/aws';
 import { env } from '../config/env';
-import { getClassifier, type WasteClassifier } from '../ml/mockClassifier';
+import { selectClassifier } from '../ml/selectClassifier';
 import { getPickup, writeMlResult } from '../services/pickupService';
 import type { ClassifyMessage } from '../services/uploadService';
 import { raiseAlert } from '../services/alertService';
@@ -17,7 +17,8 @@ import { log } from '../utils/logger';
  *  - `npm run worker`: local long-polling loop for development.
  */
 
-const classifier: WasteClassifier = getClassifier();
+// CLASSIFIER=clip (default) uses the CLIP model with a mock fallback; CLASSIFIER=mock skips the model.
+const { classifier, clip } = selectClassifier(env.classifier);
 
 function parseMessage(body: string): ClassifyMessage {
   const parsed = JSON.parse(body) as Partial<ClassifyMessage>;
@@ -65,7 +66,7 @@ export async function processMessage(body: string, messageId?: string): Promise<
     done(
       'classified',
       { classifier: classifier.name, ...result },
-      `${result.category}, contamination=${result.contamination}, confidence=${result.confidence}`,
+      `${result.category}, contamination=${result.contamination}, confidence=${result.confidence}, source=${result.source}`,
     );
     if (result.contamination) {
       await raiseAlert({
@@ -107,6 +108,9 @@ export async function pollForever(): Promise<void> {
   process.on('SIGTERM', stop);
 
   log().info({ event: 'worker_started', queueUrl, classifier: classifier.name }, 'polling for classification jobs');
+  // Warm the model in the background so the first photo doesn't wait for the download.
+  // Failure is fine: jobs fall back to the mock and the next job retries the load.
+  clip?.load().catch((err) => log().warn({ event: 'clip_warmup_failed', err }, 'CLIP warm-up failed; using mock until it loads'));
   while (running) {
     try {
       const out = await sqs.send(

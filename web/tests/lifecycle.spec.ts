@@ -34,19 +34,20 @@ function recordApiResponses(page: Page) {
 }
 
 test('full pickup lifecycle across resident, collector and admin', async ({ browser }) => {
-  const address = `UI Test ${Date.now()}, 7 Residency Rd, Bengaluru`;
-  const facility = 'GreenCycle MRF, Whitefield';
+  const address = `UI Test ${Date.now()}, Near Railway Station, Loni Kalbhor, Pune 412201`;
+  const facility = 'GreenCycle MRF, Hadapsar Industrial Estate';
 
   // --- Resident: request a pickup and read the QR code text ---
   const resident = await loginAs(browser, 'arjun.resident@recyconnect.dev');
   await resident.getByLabel('Pickup address').fill(address);
   await resident.getByLabel('What are you recycling?').selectOption('plastic');
   await resident.getByLabel('Approximate weight (kg)').fill('2.5');
-  await expect(resident.getByTestId('value-estimate')).toContainText('₹30.00');
+  await expect(resident.getByTestId('value-estimate')).toContainText('₹25.00');
+  await expect(resident.getByTestId('value-estimate')).toContainText('Rates as of');
   await resident.getByLabel('Notes for the collector (optional)').fill('Rinsed PET bottles by the gate');
   await resident.getByRole('button', { name: 'Request pickup' }).click();
   await expect(resident.getByText('Pickup requested!')).toBeVisible();
-  await expect(resident.getByTestId('value-card')).toContainText('₹30.00');
+  await expect(resident.getByTestId('value-card')).toContainText('₹25.00');
   const qrToken = (await resident.getByTestId('qr-token').textContent())!.trim();
   expect(qrToken).toMatch(/^[0-9a-f-]{36}$/);
 
@@ -60,7 +61,8 @@ test('full pickup lifecycle across resident, collector and admin', async ({ brow
   await expect(collector.getByText(address)).toBeVisible();
 
   await collector.getByTestId('photo-input').setInputFiles(PHOTO);
-  await expect(collector.getByText('AI category')).toBeVisible({ timeout: 60_000 }); // worker round-trip
+  await expect(collector.getByText('Auto-check')).toBeVisible({ timeout: 60_000 }); // worker round-trip
+  await expect(collector.getByTestId('ml-source')).toHaveText(/CLIP model|Demo mock/);
   await expect(collector.getByText(/Contamination flagged|No contamination/).first()).toBeVisible();
 
   await collector.getByTestId('qr-input').fill('00000000-0000-0000-0000-000000000000');

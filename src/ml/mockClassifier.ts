@@ -1,9 +1,9 @@
-import type { Category } from '../types';
+import type { Category, MlSource } from '../types';
 
 /**
  * Contract every waste classifier must satisfy. The worker depends only on this interface,
  * so swapping the mock for a real model (SageMaker endpoint, Rekognition Custom Labels,
- * a container on Lambda, ...) means writing one new class and changing `getClassifier()`.
+ * a container on Lambda, ...) means writing one new class and choosing it in `selectClassifier()`.
  */
 export interface ClassifierInput {
   pickupId: string;
@@ -19,6 +19,7 @@ export interface ClassificationResult {
   contamination: boolean;
   /** 0..1 */
   confidence: number;
+  source: MlSource;
 }
 
 export interface WasteClassifier {
@@ -46,11 +47,7 @@ export class MockClassifier implements WasteClassifier {
       category: input.declaredCategory,
       contamination: this.random() < CONTAMINATION_RATE,
       confidence: Math.round(confidence * 100) / 100,
+      source: 'mock',
     };
   }
-}
-
-/** Single place to choose the implementation (e.g. by env var once a real model exists). */
-export function getClassifier(): WasteClassifier {
-  return new MockClassifier();
 }

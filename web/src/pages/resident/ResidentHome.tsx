@@ -5,7 +5,7 @@ import { Empty, ErrorBox, Loading } from '../../components/States';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button, Card, Field, Input, PageTitle, Select, Textarea } from '../../components/ui';
 import { useApi } from '../../hooks/useApi';
-import { CATEGORY_LABEL, formatDateTime, formatInr } from '../../lib/format';
+import { CATEGORY_LABEL, formatDateTime, formatInr, MIXED_NO_VALUE, ratesAsOfLine } from '../../lib/format';
 
 function RequestPickupForm() {
   const navigate = useNavigate();
@@ -83,10 +83,17 @@ function RequestPickupForm() {
           />
         </Field>
         {showEstimate && (
-          <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900" data-testid="value-estimate">
-            You could get about <strong>{formatInr(rate * weightKg)}</strong> ({formatInr(rate)}/kg × {weightKg} kg). Indicative only,
-            not a payment.
-          </p>
+          <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900" data-testid="value-estimate">
+            {rate > 0 ? (
+              <p>
+                You could get about <strong>{formatInr(rate * weightKg)}</strong> ({formatInr(rate)}/kg × {weightKg} kg). Indicative only,
+                not a payment.
+              </p>
+            ) : (
+              <p>{MIXED_NO_VALUE}</p>
+            )}
+            {rates.data && <p className="mt-1 text-xs text-emerald-800/80">{ratesAsOfLine(rates.data)}</p>}
+          </div>
         )}
         <Field label="Photo of the waste (optional)" hint="JPEG or PNG. Helps the collector come prepared.">
           <Input type="file" accept="image/jpeg,image/png" onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />

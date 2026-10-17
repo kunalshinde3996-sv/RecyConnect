@@ -9,6 +9,8 @@ export const CATEGORIES = ['plastic', 'paper', 'mixed'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type MlStatus = 'none' | 'queued' | 'done';
+/** Which classifier produced the ML result. */
+export type MlSource = 'clip' | 'mock';
 
 export interface User {
   userId: string;
@@ -40,6 +42,7 @@ export interface Pickup {
   mlCategory?: Category;
   mlContamination?: boolean;
   mlConfidence?: number;
+  mlSource?: MlSource;
   mlStatus: MlStatus;
   weightKg?: number;
   /** Resident's approximate weight at request time. */
