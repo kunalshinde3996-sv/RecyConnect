@@ -49,7 +49,7 @@ export function RegisterPage() {
               {(['resident', 'collector'] as const).map((r) => (
                 <label
                   key={r}
-                  className={`cursor-pointer rounded-lg border px-3 py-2 text-center text-sm font-medium transition-colors ${
+                  className={`cursor-pointer rounded-xl border px-3 py-2 text-center text-sm font-medium transition-colors ${
                     form.role === r ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-500' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
                   }`}
                 >

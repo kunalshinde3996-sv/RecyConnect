@@ -83,7 +83,7 @@ function RequestPickupForm() {
           />
         </Field>
         {showEstimate && (
-          <div className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900" data-testid="value-estimate">
+          <div className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-900" data-testid="value-estimate">
             {rate > 0 ? (
               <p>
                 You could get about <strong>{formatInr(rate * weightKg)}</strong> ({formatInr(rate)}/kg × {weightKg} kg). Indicative only,

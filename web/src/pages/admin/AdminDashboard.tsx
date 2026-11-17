@@ -22,11 +22,55 @@ async function confirmReceipt(pickupId: string) {
   await api.handoffs.confirm(pending.handoffId);
 }
 
-function StatCard({ label, value, accent, sub }: { label: string; value: ReactNode; accent?: string; sub?: ReactNode }) {
+const statIconProps = {
+  viewBox: '0 0 24 24',
+  fill: 'none',
+  stroke: 'currentColor',
+  strokeWidth: 2,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+  className: 'h-3.5 w-3.5 shrink-0 text-slate-400',
+  'aria-hidden': true,
+} as const;
+
+const RecycleIcon = () => (
+  <svg {...statIconProps}>
+    <path d="M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5" />
+    <path d="M11 19h8.203a1.83 1.83 0 0 0 1.556-.89 1.784 1.784 0 0 0 0-1.775l-1.226-2.12" />
+    <path d="m14 16-3 3 3 3" />
+    <path d="M8.293 13.596 7.196 9.5 3.1 10.598" />
+    <path d="m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843" />
+    <path d="m13.378 9.633 4.096 1.098 1.097-4.096" />
+  </svg>
+);
+
+const AlertTriangleIcon = () => (
+  <svg {...statIconProps}>
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+    <path d="M12 9v4" />
+    <path d="M12 17h.01" />
+  </svg>
+);
+
+const PackageIcon = () => (
+  <svg {...statIconProps}>
+    <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" />
+    <path d="M12 22V12" />
+    <path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7" />
+    <path d="m7.5 4.27 9 5.15" />
+  </svg>
+);
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <p className="mb-2 text-[11px] font-semibold tracking-wider text-slate-400 uppercase">{children}</p>;
+}
+
+function StatCard({ label, value, accent, sub, icon }: { label: string; value: ReactNode; accent?: string; sub?: ReactNode; icon?: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
-        {accent && <span className={`h-2 w-2 rounded-full ${accent}`} aria-hidden="true" />}
+    <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-shadow hover:shadow-md">
+      <p className="flex items-center gap-1.5 text-xs leading-tight font-medium text-slate-500">
+        {accent && <span className={`h-2 w-2 shrink-0 rounded-full ${accent}`} aria-hidden="true" />}
+        {icon}
         {label}
       </p>
       <p className="mt-1 text-2xl font-bold text-slate-900 tabular-nums">{value}</p>
@@ -49,22 +93,34 @@ function StatsCards({ refreshKey }: { refreshKey: number }) {
   if (error && !data) return <ErrorBox message={error} onRetry={reload} />;
   if (!data) return null;
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        <StatCard label="Total kg collected" value={formatKg(data.totalKgCollected)} accent="bg-emerald-500" />
-        <StatCard
-          label="Contamination flagged"
-          value={<span className={data.contaminationCount ? 'text-red-600' : ''}>{data.contaminationCount}</span>}
-          accent="bg-red-500"
-          sub={data.mlQueued ? `${data.mlQueued} photo(s) being analysed` : undefined}
-        />
-        <StatCard label="Total pickups" value={data.totalPickups} accent="bg-slate-400" />
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        {PICKUP_STATUSES.map((s) => (
-          <StatCard key={s} label={STATUS_LABEL[s]} value={data.byStatus[s] ?? 0} accent={STATUS_STYLE[s].dot} />
-        ))}
-      </div>
+    <div className="space-y-5">
+      <section>
+        <SectionLabel>Overview</SectionLabel>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <StatCard
+            label="Total kg collected"
+            value={<span className="text-emerald-600">{formatKg(data.totalKgCollected)}</span>}
+            accent="bg-emerald-500"
+            icon={<RecycleIcon />}
+          />
+          <StatCard
+            label="Contamination flagged"
+            value={<span className={data.contaminationCount ? 'text-red-600' : ''}>{data.contaminationCount}</span>}
+            accent="bg-red-500"
+            icon={<AlertTriangleIcon />}
+            sub={data.mlQueued ? `${data.mlQueued} photo(s) being analysed` : undefined}
+          />
+          <StatCard label="Total pickups" value={data.totalPickups} accent="bg-slate-400" icon={<PackageIcon />} />
+        </div>
+      </section>
+      <section>
+        <SectionLabel>By status</SectionLabel>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
+          {PICKUP_STATUSES.map((s) => (
+            <StatCard key={s} label={STATUS_LABEL[s]} value={data.byStatus[s] ?? 0} accent={STATUS_STYLE[s].dot} />
+          ))}
+        </div>
+      </section>
       {error && <p className="text-xs text-amber-700">Live refresh failed: {error}</p>}
     </div>
   );
@@ -152,13 +208,20 @@ function AlertsPanel({ refreshKey, onOpenPickup }: { refreshKey: number; onOpenP
           <Empty title="No alerts">Contamination, hand-offs, confirmations and missed pickups appear here.</Empty>
         </div>
       ) : (
-        <ul className="divide-y divide-slate-100 overflow-y-auto">
+        <ul className="space-y-2 overflow-y-auto p-3">
           {data.alerts.map((a) => (
-            <li key={a.alertId} className={a.read ? '' : 'bg-amber-50/60'}>
+            <li
+              key={a.alertId}
+              className={`overflow-hidden rounded-xl border ${
+                a.type === 'contamination' ? 'border-red-200 bg-red-50' : a.read ? 'border-slate-200 bg-white' : 'border-amber-200 bg-amber-50/60'
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => open(a)}
-                className="block w-full p-3 text-left hover:bg-emerald-50/60 focus:bg-emerald-50 focus:outline-none"
+                className={`block w-full p-3 text-left transition-colors focus:outline-none ${
+                  a.type === 'contamination' ? 'hover:bg-red-100/60 focus:bg-red-100/60' : 'hover:bg-emerald-50/60 focus:bg-emerald-50'
+                }`}
                 aria-label={`${a.read ? '' : 'Unread: '}${ALERT_META[a.type].label}. ${a.message}`}
               >
                 <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
@@ -176,6 +239,19 @@ function AlertsPanel({ refreshKey, onOpenPickup }: { refreshKey: number; onOpenP
       {error && data && <p className="px-4 pb-3 text-xs text-amber-700">Live refresh failed: {error}</p>}
     </Card>
   );
+}
+
+/** Muted placeholder for columns a pickup hasn't reached yet. */
+function PendingCell() {
+  return <span className="text-xs text-slate-300 italic">— pending</span>;
+}
+
+const AVATAR_PALETTE = ['bg-emerald-100 text-emerald-800', 'bg-sky-100 text-sky-800', 'bg-amber-100 text-amber-800', 'bg-violet-100 text-violet-800'];
+
+function avatarClass(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
 }
 
 function PickupsTable({ onOpen, refreshKey, onChanged }: { onOpen: (p: Pickup) => void; refreshKey: number; onChanged: () => void }) {
@@ -253,16 +329,22 @@ function PickupsTable({ onOpen, refreshKey, onChanged }: { onOpen: (p: Pickup) =
                   onClick={() => onOpen(p)}
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onOpen(p))}
                   tabIndex={0}
-                  className="cursor-pointer hover:bg-emerald-50/50 focus:bg-emerald-50 focus:outline-none"
+                  className={`cursor-pointer transition-colors focus:bg-emerald-50 focus:outline-none ${
+                    p.mlStatus === 'done' && p.mlContamination ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-gray-50'
+                  }`}
                   aria-label={`Open timeline for pickup at ${p.address}`}
                 >
                   <td className="px-4 py-3 whitespace-nowrap text-slate-600">{formatDateTime(p.createdAt)}</td>
-                  <td className="max-w-[16rem] truncate px-4 py-3 font-medium text-slate-900">{p.address}</td>
+                  <td className="max-w-[16rem] truncate px-4 py-3 font-medium text-slate-900" title={p.address}>
+                    {p.address}
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{CATEGORY_LABEL[p.declaredCategory]}</td>
                   <td className="px-4 py-3">
                     <StatusBadge status={p.status} />
                   </td>
-                  <td className="px-4 py-3 text-right whitespace-nowrap text-slate-700 tabular-nums">{formatKg(p.weightKg)}</td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap text-slate-700 tabular-nums">
+                    {p.weightKg === null || p.weightKg === undefined ? <PendingCell /> : formatKg(p.weightKg)}
+                  </td>
                   <td className="px-4 py-3">
                     {p.mlStatus === 'done' && p.mlContamination !== undefined ? (
                       <ContaminationBadge contaminated={p.mlContamination} />
@@ -271,13 +353,13 @@ function PickupsTable({ onOpen, refreshKey, onChanged }: { onOpen: (p: Pickup) =
                         <Spinner className="h-3 w-3" /> Analysing
                       </span>
                     ) : (
-                      <span className="text-xs text-slate-400">-</span>
+                      <PendingCell />
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {p.status === 'handed_off' && (
                       <Button
-                        className="!min-h-8 !px-3 !py-1 text-xs whitespace-nowrap"
+                        className="!min-h-8 !px-3 !py-1 text-xs whitespace-nowrap !transition-all hover:scale-[1.03] hover:shadow-sm active:scale-[0.98] disabled:scale-100"
                         busy={confirming === p.pickupId}
                         disabled={confirming !== null}
                         onClick={(e) => {
@@ -329,10 +411,20 @@ function CollectorsTable({ refreshKey }: { refreshKey: number }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {data.map((c) => (
-                <tr key={c.userId}>
+                <tr key={c.userId} className="transition-colors hover:bg-gray-50">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-slate-900">{c.name}</p>
-                    <p className="text-xs text-slate-500">{c.email}</p>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${avatarClass(c.name)}`}
+                        aria-hidden="true"
+                      >
+                        {c.name.trim().charAt(0).toUpperCase() || '?'}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-900">{c.name}</p>
+                        <p className="text-xs text-slate-500">{c.email}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">{c.assignedCount}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{c.inTransitCount}</td>

@@ -18,7 +18,7 @@ function Step({ n, title, state, lockedHint, children }: { n: number; title: str
   return (
     <section
       aria-disabled={state === 'locked'}
-      className={`rounded-2xl border bg-white p-4 shadow-sm ${state === 'active' ? 'border-emerald-400 ring-1 ring-emerald-400' : 'border-slate-200'}`}
+      className={`rounded-xl border bg-white p-4 shadow-sm ${state === 'active' ? 'border-emerald-400 ring-1 ring-emerald-400' : 'border-slate-200'}`}
     >
       <div className="flex items-center gap-3">
         <span
@@ -248,7 +248,7 @@ export function CollectorPickupDetail() {
         <ErrorBox message={error} onRetry={() => void refresh()} />
       ) : p && t ? (
         <>
-          <header className="rounded-2xl bg-emerald-700 p-4 text-white shadow">
+          <header className="rounded-xl bg-emerald-700 p-4 text-white shadow">
             <div className="flex items-start justify-between gap-3">
               <p className="text-lg leading-snug font-semibold">{p.address}</p>
               <StatusBadge status={t.status} />
@@ -262,7 +262,7 @@ export function CollectorPickupDetail() {
           <CollectStep timeline={t} onChanged={refresh} />
           <HandoffStep timeline={t} onChanged={refresh} />
 
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
             <button
               type="button"
               aria-expanded={showTimeline}
